@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+@theme {
+  --color-space: #050816;
+  --color-primary: #4F46E5;
+  --color-accent: #00E5FF;
+  --color-secondary: #94A3BB;
+}
+
+:root {
+  --bg-space: #050816;
+  --primary-indigo: #4F46E5;
+  --accent-cyan: #00E5FF;
+  --secondary-slate: #94A3BB;
+  --text-pure-white: #FFFFFF;
+}
+
+@layer base {
+  body {
+    background-color: #050816;
+    color: #FFFFFF;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', sans-serif;
+    color: #FFFFFF;
+  }
+  p {
+    color: #94A3BB;
+  }
+}
+
+/* Color Theme Specialty Utilities */
+.bg-deep-space {
+  background-color: #050816;
+}
+
+.text-accent-cyan {
+  color: #00E5FF;
+}
+
+.text-secondary-slate {
+  color: #94A3BB;
+}
+
+.border-accent-cyan {
+  border-color: #00E5FF;
+}
+
+.border-theme-subtle {
+  border-color: rgba(148, 163, 187, 0.15);
+}
+
+/* Buttons matching the theme preview */
+.btn-primary-theme {
+  background-color: #4F46E5;
+  color: #FFFFFF;
+  transition: all 0.2s ease-in-out;
+}
+.btn-primary-theme:hover {
+  background-color: #4338CA;
+  box-shadow: 0 0 20px rgba(79, 70, 229, 0.45);
+}
+
+.btn-accent-theme {
+  background-color: rgba(0, 229, 255, 0.05);
+  border: 1.5px solid #00E5FF;
+  color: #00E5FF;
+  transition: all 0.2s ease-in-out;
+}
+.btn-accent-theme:hover {
+  background-color: rgba(0, 229, 255, 0.15);
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.35);
+}
+
+/* Glassmorphism utility classes aligned with #050816 */
+.glass-panel {
+  background: rgba(11, 17, 38, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(148, 163, 187, 0.12);
+}
+
+.glass-panel-hover {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-panel-hover:hover {
+  background: rgba(15, 23, 50, 0.85);
+  border-color: rgba(0, 229, 255, 0.35);
+  box-shadow: 0 10px 30px -10px rgba(0, 229, 255, 0.18);
+}
+
+.glass-card-glow {
+  position: relative;
+}
+.glass-card-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.6), rgba(0, 229, 255, 0.4), transparent 75%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #050816;
+}
+::-webkit-scrollbar-thumb {
+  background: #172033;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4F46E5;
+}
