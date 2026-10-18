@@ -739,17 +739,105 @@ export default function ComplianceOfficerDashboard() {
                       </div>
                     </div>
 
-                    {/* Document Preview */}
-                    {assetDetails.asset.document && (
-                      <div className="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-4">
-                        <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Asset Document</h3>
-                        <img
-                          src={assetDetails.asset.document}
-                          alt="Asset Document"
-                          className="w-full h-64 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700"
-                        />
-                      </div>
-                    )}
+                    {/* Asset Documents */}
+                    <div className="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-4">
+                      <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Asset Documents</h3>
+                      {assetDetails.asset.documents ? (
+                        <div className="grid grid-cols-2 gap-4">
+                          {assetDetails.asset.documents.deed && (
+                            <div>
+                              <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Deed</h4>
+                              {assetDetails.asset.documents.deed.url.match(/\.(jpg|jpeg|png)$/i) ? (
+                                <img
+                                  src={assetDetails.asset.documents.deed.url}
+                                  alt="Deed"
+                                  className="w-full h-48 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700"
+                                  onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><text y="50%" x="50%" text-anchor="middle">Error loading image</text></svg>';
+                                  }}
+                                />
+                              ) : (
+                                <a
+                                  href={assetDetails.asset.documents.deed.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block text-blue-600 hover:text-blue-700 text-sm"
+                                >
+                                  View Deed Document
+                                </a>
+                              )}
+                            </div>
+                          )}
+                          {assetDetails.asset.documents.surveyPlan && (
+                            <div>
+                              <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Survey Plan</h4>
+                              {assetDetails.asset.documents.surveyPlan.url.match(/\.(jpg|jpeg|png)$/i) ? (
+                                <img
+                                  src={assetDetails.asset.documents.surveyPlan.url}
+                                  alt="Survey Plan"
+                                  className="w-full h-48 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700"
+                                  onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><text y="50%" x="50%" text-anchor="middle">Error loading image</text></svg>';
+                                  }}
+                                />
+                              ) : (
+                                <a
+                                  href={assetDetails.asset.documents.surveyPlan.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block text-blue-600 hover:text-blue-700 text-sm"
+                                >
+                                  View Survey Plan Document
+                                </a>
+                              )}
+                            </div>
+                          )}
+                          {assetDetails.asset.documents.extracts && (
+                            <div>
+                              <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Extracts</h4>
+                              <a
+                                href={assetDetails.asset.documents.extracts.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block text-blue-600 hover:text-blue-700 text-sm"
+                              >
+                                View Extracts Document
+                              </a>
+                            </div>
+                          )}
+                          {assetDetails.asset.documents.priorDeeds && (
+                            <div>
+                              <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Prior Deeds</h4>
+                              <a
+                                href={assetDetails.asset.documents.priorDeeds.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block text-blue-600 hover:text-blue-700 text-sm"
+                              >
+                                View Prior Deeds Document
+                              </a>
+                            </div>
+                          )}
+                          {assetDetails.asset.documents.certificates && (
+                            <div>
+                              <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Certificates</h4>
+                              <a
+                                href={assetDetails.asset.documents.certificates.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block text-blue-600 hover:text-blue-700 text-sm"
+                              >
+                                View Certificates Document
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-zinc-600 dark:text-zinc-400 text-sm">No documents uploaded</p>
+                      )}
+                    </div>
 
                     {/* OCR Data */}
                     {assetDetails.asset.ocrData && (
