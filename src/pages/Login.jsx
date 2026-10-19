@@ -28,6 +28,7 @@ export default function Login() {
         name: user.name,
         email: user.email,
         role: user.role,
+        walletAddress: user.walletAddress || null,
         token,
       });
 

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { authAPI, kycAPI } from '../../lib/api';
+import Navbar from '../../components/Navbar';
+import { ShieldCheck } from 'lucide-react';
 
 export default function ComplianceOfficerDashboard() {
   const navigate = useNavigate();
@@ -211,27 +213,33 @@ export default function ComplianceOfficerDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      <nav className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-            Compliance Officer Dashboard
-          </h1>
-          <div className="flex items-center gap-4">
-            <span className="text-zinc-600 dark:text-zinc-400">
-              Welcome, {user?.name}
-            </span>
-            <button
-              onClick={handleLogout}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              Logout
-            </button>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+      <Navbar />
+
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
+        {/* Compliance Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                <ShieldCheck className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-3xl font-black tracking-tight text-white">
+                    Compliance Officer Review Desk
+                  </h1>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                    Admin View
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Logged in as <strong className="text-zinc-200">{user?.name || "Compliance Officer"}</strong> ({user?.email})
+                </p>
+              </div>
+            </div>
           </div>
         </div>
-      </nav>
-
-      <main className="max-w-7xl mx-auto px-6 py-8">
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg mb-6">
             {error}

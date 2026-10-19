@@ -1,5 +1,6 @@
 import React from "react";
 import { MapPin, Coins, TrendingUp, ShieldCheck, ArrowRightLeft, Eye, ShoppingCart } from "lucide-react";
+import { useCurrency } from "../context/CurrencyContext";
 
 export default function AssetCard({
   asset,
@@ -9,6 +10,7 @@ export default function AssetCard({
   onOpenTransfer,
   onOpenBuy
 }) {
+  const { currency, formatLKR } = useCurrency();
   const isTokenized = asset.status === "Tokenized";
   const userTokens = userBalance || 0;
   const isIssuer = wallet?.account && asset.issuerWallet && wallet.account.toLowerCase() === asset.issuerWallet.toLowerCase();
@@ -88,9 +90,9 @@ export default function AssetCard({
           {/* Economics Grid */}
           <div className="grid grid-cols-2 gap-3 my-4 p-3.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/15">
             <div>
-              <p className="text-[11px] text-[#94A3BB] font-medium">Asset Valuation</p>
+              <p className="text-[11px] text-[#94A3BB] font-medium">Asset Valuation ({currency})</p>
               <p className="text-sm font-bold text-white mt-0.5">
-                LKR {(asset.valuationLKR).toLocaleString()}
+                {formatLKR(asset.valuationLKR)}
               </p>
             </div>
             <div>
@@ -101,9 +103,9 @@ export default function AssetCard({
               </p>
             </div>
             <div>
-              <p className="text-[11px] text-[#94A3BB] font-medium">Fraction Price</p>
+              <p className="text-[11px] text-[#94A3BB] font-medium">Fraction Price ({currency})</p>
               <p className="text-sm font-bold text-slate-200 mt-0.5">
-                LKR {(asset.sharePriceLKR || (asset.valuationLKR / asset.totalShares)).toLocaleString()}
+                {formatLKR(asset.sharePriceLKR || (asset.valuationLKR / asset.totalShares))}
               </p>
             </div>
             <div>

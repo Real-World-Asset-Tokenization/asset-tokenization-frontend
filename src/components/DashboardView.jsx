@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useCurrency } from "../context/CurrencyContext";
 import {
   Wallet,
   Building,
@@ -24,6 +25,7 @@ export default function DashboardView({
   onOpenTransfer,
   onOpenBuy
 }) {
+  const { currency, formatLKR } = useCurrency();
   const [selectedTimeframe, setSelectedTimeframe] = useState("30D");
 
   // Calculate user portfolio metrics
@@ -90,11 +92,11 @@ export default function DashboardView({
           </div>
           <div className="mt-3">
             <h3 className="text-2xl font-black text-white tracking-tight">
-              LKR {totalUserPortfolioLKR.toLocaleString()}
+              {formatLKR(totalUserPortfolioLKR)}
             </h3>
             <p className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1 font-semibold">
               <TrendingUp className="w-3 h-3" />
-              <span>≈ ${(totalUserPortfolioLKR / 310).toFixed(0)} USD</span>
+              <span>{currency !== "LKR" ? `≈ LKR ${totalUserPortfolioLKR.toLocaleString()}` : `≈ $${(totalUserPortfolioLKR / 310).toFixed(0)} USD`}</span>
             </p>
           </div>
         </div>
@@ -109,10 +111,10 @@ export default function DashboardView({
           </div>
           <div className="mt-3">
             <h3 className="text-2xl font-black text-emerald-400 tracking-tight">
-              LKR {annualRentalIncomeLKR.toLocaleString()}
+              {formatLKR(annualRentalIncomeLKR)}
             </h3>
             <p className="text-[11px] text-slate-400 mt-1">
-              Monthly avg: <strong className="text-slate-200">LKR {monthlyRentalIncomeLKR.toLocaleString()}</strong>
+              Monthly avg: <strong className="text-slate-200">{formatLKR(monthlyRentalIncomeLKR)}</strong>
             </p>
           </div>
         </div>
@@ -321,11 +323,11 @@ export default function DashboardView({
                       </td>
 
                       <td className="p-4 font-bold text-slate-100">
-                        LKR {equityVal.toLocaleString()}
+                        {formatLKR(equityVal)}
                       </td>
 
                       <td className="p-4 font-bold text-emerald-400">
-                        +LKR {rentalInc.toLocaleString()} / yr
+                        +{formatLKR(rentalInc)} / yr
                       </td>
 
                       <td className="p-4 pr-6 text-right">

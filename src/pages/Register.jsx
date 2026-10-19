@@ -13,6 +13,7 @@ export default function Register() {
     password: '',
     confirmPassword: '',
     role: 'investor',
+    walletAddress: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,6 +27,12 @@ export default function Register() {
       return;
     }
 
+    const trimmedWallet = formData.walletAddress ? formData.walletAddress.trim().toLowerCase() : '';
+    if (trimmedWallet && !/^0x[a-f0-9]{40}$/i.test(trimmedWallet)) {
+      setError('Please enter a valid 42-character Ethereum address (0x...) or leave it blank to link after login.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -34,6 +41,7 @@ export default function Register() {
         email: formData.email,
         password: formData.password,
         role: formData.role,
+        walletAddress: trimmedWallet || undefined,
       });
 
       const { token, user } = response.data.data;
@@ -43,6 +51,7 @@ export default function Register() {
         name: user.name,
         email: user.email,
         role: user.role,
+        walletAddress: user.walletAddress || null,
         token,
       });
 
@@ -127,6 +136,19 @@ export default function Register() {
               <option value="asset_owner">Asset Owner</option>
               <option value="compliance_officer">Compliance Officer</option>
             </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <Input
+              label="Ethereum Wallet Address (Optional)"
+              type="text"
+              value={formData.walletAddress}
+              onChange={(e) => setFormData({ ...formData, walletAddress: e.target.value })}
+              placeholder="0x... (leave blank to link later)"
+            />
+            <span className="text-[11px] text-zinc-500">
+              Each wallet ID is unique to one account. You can also link your wallet at any time after login.
+            </span>
           </div>
 
           <button

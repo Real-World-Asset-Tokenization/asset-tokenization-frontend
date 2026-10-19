@@ -33,6 +33,12 @@ export const authAPI = {
       },
     });
   },
+
+  updateWallet: (walletAddress) =>
+    api.put('/auth/wallet', { walletAddress }),
+
+  getMe: () =>
+    api.get('/auth/me'),
 };
 
 export const kycAPI = {
@@ -133,6 +139,15 @@ export const kycAPI = {
   verifyAsset: (assetId) => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     return axios.post(`${API_URL}/assets/verify/${assetId}`, {}, {
+      headers: {
+        Authorization: `Bearer ${user.token}`,
+      },
+    });
+  },
+
+  tokenizeAsset: (assetId, data = {}) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return axios.post(`${API_URL}/assets/${assetId}/tokenize`, data, {
       headers: {
         Authorization: `Bearer ${user.token}`,
       },

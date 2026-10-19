@@ -37,7 +37,7 @@ export default function ProfitDistributionView({ wallet, assets, userBalances })
   const initialInvestors = [
     {
       name: "Your Connected Wallet",
-      wallet: wallet.account || "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      wallet: wallet.account || "Not Connected",
       isUser: true,
       shares: userTokens,
       pct: (userOwnershipPct * 100).toFixed(1),
