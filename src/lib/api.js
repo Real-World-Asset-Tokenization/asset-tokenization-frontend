@@ -174,6 +174,24 @@ export const kycAPI = {
       },
     });
   },
+
+  confirmTokenizationConsent: (assetId) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return axios.post(`${API_URL}/assets/${assetId}/consent`, {}, {
+      headers: {
+        Authorization: `Bearer ${user.token}`,
+      },
+    });
+  },
+
+  getTokenizationStatus: (assetId) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return axios.get(`${API_URL}/assets/${assetId}/tokenization-status`, {
+      headers: {
+        Authorization: `Bearer ${user.token}`,
+      },
+    });
+  },
 };
 
 export default api;

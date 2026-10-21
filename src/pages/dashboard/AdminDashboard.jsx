@@ -658,6 +658,106 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
+                  {/* Asset Documents */}
+                  <div className="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-4">
+                    <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Asset Documents</h3>
+                    {selectedAsset.documents ? (
+                      <div className="grid grid-cols-2 gap-4">
+                        {selectedAsset.documents.deed && (
+                          <div>
+                            <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Deed</h4>
+                            {selectedAsset.documents.deed.url.match(/\.(jpg|jpeg|png)$/i) ? (
+                              <img
+                                src={selectedAsset.documents.deed.url}
+                                alt="Deed"
+                                className="w-full h-48 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><text y="50%" x="50%" text-anchor="middle">Error loading image</text></svg>';
+                                }}
+                              />
+                            ) : (
+                              <a
+                                href={selectedAsset.documents.deed.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block text-blue-600 hover:text-blue-700 text-sm"
+                              >
+                                View Deed Document
+                              </a>
+                            )}
+                          </div>
+                        )}
+                        {selectedAsset.documents.surveyPlan && (
+                          <div>
+                            <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Survey Plan</h4>
+                            {selectedAsset.documents.surveyPlan.url.match(/\.(jpg|jpeg|png)$/i) ? (
+                              <img
+                                src={selectedAsset.documents.surveyPlan.url}
+                                alt="Survey Plan"
+                                className="w-full h-48 object-cover rounded-lg border border-zinc-200 dark:border-zinc-700"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><text y="50%" x="50%" text-anchor="middle">Error loading image</text></svg>';
+                                }}
+                              />
+                            ) : (
+                              <a
+                                href={selectedAsset.documents.surveyPlan.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block text-blue-600 hover:text-blue-700 text-sm"
+                              >
+                                View Survey Plan Document
+                              </a>
+                            )}
+                          </div>
+                        )}
+                        {selectedAsset.documents.extracts && (
+                          <div>
+                            <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Extracts</h4>
+                            <a
+                              href={selectedAsset.documents.extracts.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block text-blue-600 hover:text-blue-700 text-sm"
+                            >
+                              View Extracts Document
+                            </a>
+                          </div>
+                        )}
+                        {selectedAsset.documents.priorDeeds && (
+                          <div>
+                            <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Prior Deeds</h4>
+                            <a
+                              href={selectedAsset.documents.priorDeeds.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block text-blue-600 hover:text-blue-700 text-sm"
+                            >
+                              View Prior Deeds Document
+                            </a>
+                          </div>
+                        )}
+                        {selectedAsset.documents.certificates && (
+                          <div>
+                            <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Certificates</h4>
+                            <a
+                              href={selectedAsset.documents.certificates.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block text-blue-600 hover:text-blue-700 text-sm"
+                            >
+                              View Certificates Document
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-zinc-600 dark:text-zinc-400 text-sm">No documents uploaded</p>
+                    )}
+                  </div>
+
                   {/* Update Status */}
                   <div className="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-4">
                     <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Update Asset Status</h3>
