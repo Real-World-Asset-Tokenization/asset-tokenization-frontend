@@ -1,5 +1,7 @@
+import { selectLinkedWallet } from '../services/contractService';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { AlertTriangle, Hexagon, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../lib/api';
 import { Input } from '../components/Input';
@@ -32,6 +34,12 @@ export default function Login() {
         token,
       });
 
+      // MetaMask keeps the previous user's account selected. Ask it to switch to this user's wallet
+      // right away (opens its account chooser only when needed; ignored if cancelled).
+      if (user.walletAddress && window.ethereum) {
+        selectLinkedWallet(user.walletAddress.toLowerCase()).catch(() => {});
+      }
+
       // Redirect based on role
       if (user.role === 'investor') {
         navigate('/dashboard/investor');
@@ -40,7 +48,7 @@ export default function Login() {
       } else if (user.role === 'compliance_officer') {
         navigate('/dashboard/compliance-officer');
       } else {
-        navigate('/dashboard/admin');
+        navigate('/admin');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
@@ -50,53 +58,55 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-black px-4">
-      <div className="max-w-md w-full bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-8">
-        <h1 className="text-2xl font-bold text-center mb-6 text-zinc-900 dark:text-zinc-100">
-          KYC Service Login
-        </h1>
+    <div className="auth-bg min-h-screen flex flex-col items-center justify-center px-4 py-10 text-white">
+      <Link to="/" className="mb-8 inline-flex items-center gap-3" aria-label="TerraToken home">
+        <span className="w-10 h-10 rounded-xl bg-[#1fe06f] flex items-center justify-center"><Hexagon className="w-5 h-5 text-[#04130a]" /></span>
+        <span className="text-xl font-bold tracking-tight">TerraToken</span>
+      </Link>
+
+      <main className="rise w-full max-w-sm rounded-3xl border border-white/10 bg-[#232427] p-7 sm:p-8 shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)]">
+        <h1 className="text-2xl font-bold tracking-tight">Sign in</h1>
+        <p className="mt-1 text-sm text-[#a1a1aa]">Welcome back. Enter your details to continue.</p>
 
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg mb-4">
-            {error}
+          <div role="alert" className="mt-5 flex gap-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />{error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <Input
             label="Email"
             type="email"
+            autoComplete="email"
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            placeholder="Enter your email"
+            placeholder="you@example.com"
             required
           />
-
           <Input
             label="Password"
             type="password"
+            autoComplete="current-password"
             value={formData.password}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            placeholder="Enter your password"
+            placeholder="Your password"
             required
           />
-
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#1fe06f] hover:bg-[#4aeb8a] py-3 font-bold text-[#04130a] disabled:opacity-60"
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+      </main>
 
-        <p className="text-center mt-6 text-zinc-600 dark:text-zinc-400">
-          Don't have an account?{' '}
-          <a href="/register" className="text-blue-600 hover:text-blue-700 font-medium">
-            Register
-          </a>
-        </p>
-      </div>
+      <p className="mt-6 text-sm text-[#a1a1aa]">
+        New here? <Link to="/register" className="font-semibold text-[#1fe06f] hover:underline">Create an account</Link>
+      </p>
     </div>
   );
 }

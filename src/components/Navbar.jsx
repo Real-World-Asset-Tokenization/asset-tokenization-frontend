@@ -1,48 +1,81 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useContext } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Wallet, ShieldCheck, RefreshCw, AlertTriangle, ExternalLink, User, Building, LogOut, LogIn, PlusCircle, Check } from "lucide-react";
-import { checkAndSwitchNetwork, LOCAL_CHAIN_ID, getPaymentTokenBalance } from "../services/contractService";
+import { checkAndSwitchNetwork, LOCAL_CHAIN_ID, getPaymentTokenBalance, selectLinkedWallet, walletImportHelp } from "../services/contractService";
 import CurrencyPicker from "./CurrencyPicker";
 import AddWalletModal from "./AddWalletModal";
 import { useCurrency } from "../context/CurrencyContext";
 import { useRole } from "../context/RoleContext";
 import { useAuth } from "../context/AuthContext";
-import { resolveUserWallet } from "../lib/walletResolver";
+import { resolveUserWallet, sameWallet } from "../lib/walletResolver";
+import { authAPI } from "../lib/api";
+import { ShellContext } from "./layout/shellContext";
 
-export default function Navbar() {
+const formatAddr = (addr) => (addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "");
+
+// Inside the asset-owner workspace the sidebar layout replaces this top bar; pages
+// still render <Navbar /> and it simply steps aside. The workspace top bar renders
+// <Navbar embedded /> to reuse the wallet, network and currency controls.
+export default function Navbar({ embedded = false }) {
+  const inShell = useContext(ShellContext);
+  if (inShell && !embedded) return null;
+  return <NavbarInner embedded={embedded} />;
+}
+
+function NavbarInner({ embedded }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, isAuthenticated, linkWallet } = useAuth();
   const { currency, formatMUSD } = useCurrency();
   const { currentConfig, activeRole } = useRole();
   const [metaMaskAccount, setMetaMaskAccount] = useState("");
-  const [mUsdBalance, setMUsdBalance] = useState(0);
+  const [mUsdBalance, setMUsdBalance] = useState(null);
+  const [balanceError, setBalanceError] = useState("");
   const [isWrongNetwork, setIsWrongNetwork] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [linking, setLinking] = useState(false);
   const [showAddWalletModal, setShowAddWalletModal] = useState(false);
 
-  // Authoritative linked wallet on user account
-  const userWallet = isAuthenticated
-    ? (user?.walletAddress || resolveUserWallet(user) || "")
-    : "";
+  // The wallet saved on the signed-in account is the only wallet the header shows.
+  // MetaMask is just the signer and must be on that same address.
+  const userWallet = isAuthenticated ? (resolveUserWallet(user) || "") : "";
+  const activeWallet = userWallet;
+  const walletRef = useRef(activeWallet);
+  walletRef.current = activeWallet;
 
-  // The active Web3 wallet in the browser: MetaMask account if connected, else user's linked account wallet
-  const activeWallet = metaMaskAccount || userWallet;
-  const displayWallet = activeWallet;
+  // Whose wallet MetaMask is currently on: "yours" | "other_user" | "unlinked" | null (unknown).
+  const [mmOwner, setMmOwner] = useState(null);
+  const [walletError, setWalletError] = useState("");
+  const [dismissedKey, setDismissedKey] = useState("");
+  // Errors appear only after the user tries to connect, never on page load.
+  const triedConnect = useRef(false);
 
-  const isMismatch = Boolean(
-    isAuthenticated &&
-    userWallet &&
-    metaMaskAccount &&
-    userWallet.toLowerCase() !== metaMaskAccount.toLowerCase()
-  );
+  const mmConnected = Boolean(metaMaskAccount);
+  const isSynced = Boolean(userWallet && mmConnected && sameWallet(userWallet, metaMaskAccount));
+  const isMismatch = Boolean(userWallet && mmConnected && !isSynced);
+  const mmBelongsToOther = mmConnected && !isSynced && mmOwner === "other_user";
 
-  const isDisconnectedMM = Boolean(
-    isAuthenticated &&
-    userWallet &&
-    !metaMaskAccount
-  );
+  // Ask the backend whether the MetaMask account belongs to another user of the system.
+  useEffect(() => {
+    let cancelled = false;
+    setMmOwner(null);
+    if (!isAuthenticated || !metaMaskAccount || sameWallet(userWallet, metaMaskAccount)) return;
+    authAPI.checkWallet(metaMaskAccount.toLowerCase())
+      .then((r) => { if (!cancelled) setMmOwner(r.data?.data?.status || null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isAuthenticated, metaMaskAccount, userWallet]);
+
+  // After a connect attempt, explain why another user's wallet was not accepted.
+  useEffect(() => {
+    if (mmBelongsToOther && triedConnect.current) {
+      setWalletError(
+        "The account selected in MetaMask is linked to another user in this system. " +
+        (userWallet ? "Select your own wallet in MetaMask, then click Connect wallet." : "Choose a wallet that is not used by another account.")
+      );
+    } else if (isSynced || !mmConnected) {
+      setWalletError("");
+    }
+  }, [mmBelongsToOther, isSynced, mmConnected, metaMaskAccount, userWallet]);
 
   const fetchBalance = useCallback(async (address) => {
     if (!address) {
@@ -50,11 +83,17 @@ export default function Navbar() {
       return;
     }
     try {
-      const bal = await getPaymentTokenBalance(address);
-      setMUsdBalance(bal);
+      const bal = await getPaymentTokenBalance(address, { throwOnError: true });
+      if (walletRef.current === address) {
+        setMUsdBalance(bal);
+        setBalanceError("");
+      }
     } catch (err) {
       console.warn("Could not fetch balance:", err);
-      setMUsdBalance(0);
+      if (walletRef.current === address) {
+        setMUsdBalance(null);
+        setBalanceError(err.code === "PAYMENT_TOKEN_NOT_DEPLOYED" ? "Local chain needs setup" : "Balance unavailable");
+      }
     }
   }, []);
 
@@ -80,6 +119,7 @@ export default function Navbar() {
 
   // Fetch balance whenever active wallet or route changes
   useEffect(() => {
+    setMUsdBalance(null);
     if (activeWallet) {
       fetchBalance(activeWallet);
     } else {
@@ -102,14 +142,9 @@ export default function Navbar() {
   }, [activeWallet, fetchBalance]);
 
   const handleAccountsChanged = (accounts) => {
-    const nextAcc = accounts && accounts.length > 0 ? accounts[0] : "";
+    // If MetaMask shares several accounts, prefer the one saved on this login.
+    const nextAcc = accounts?.find((a) => sameWallet(walletRef.current, a)) || accounts?.[0] || "";
     setMetaMaskAccount(nextAcc);
-    const nextActive = nextAcc || userWallet;
-    if (nextActive) {
-      fetchBalance(nextActive);
-    } else {
-      setMUsdBalance(0);
-    }
   };
 
   const checkConnection = async () => {
@@ -120,70 +155,181 @@ export default function Navbar() {
       setIsWrongNetwork(currentChainId !== LOCAL_CHAIN_ID);
 
       const accounts = await window.ethereum.request({ method: "eth_accounts" });
-      if (accounts && accounts.length > 0) {
-        setMetaMaskAccount(accounts[0]);
-        fetchBalance(accounts[0]);
-      } else {
-        setMetaMaskAccount("");
-        if (userWallet) fetchBalance(userWallet);
-      }
+      setMetaMaskAccount(accounts?.find((a) => sameWallet(walletRef.current, a)) || accounts?.[0] || "");
     } catch (err) {
       console.warn("Connection check error:", err);
     }
   };
 
   const connectWallet = async () => {
+    triedConnect.current = true;
     if (!window.ethereum) {
-      alert("Please install MetaMask to interact with the blockchain.");
+      // No MetaMask: let the user type the address instead.
+      if (!userWallet) setShowAddWalletModal(true);
+      else setWalletError("MetaMask is not installed in this browser.");
       return;
     }
     try {
       setConnecting(true);
       await checkAndSwitchNetwork();
-      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-      if (accounts && accounts.length > 0) {
-        setMetaMaskAccount(accounts[0]);
-        fetchBalance(accounts[0]);
+      setWalletError("");
+      // With a saved wallet, open MetaMask's account chooser (plain eth_requestAccounts would just
+      // return the account MetaMask already shares and never let the user switch).
+      const accounts = userWallet
+        ? await selectLinkedWallet(userWallet)
+        : await window.ethereum.request({ method: "eth_requestAccounts" });
+      const picked = accounts?.find((a) => sameWallet(userWallet, a)) || accounts?.[0];
+      if (!picked) return;
+      setMetaMaskAccount(picked);
+      if (userWallet) {
+        if (!sameWallet(userWallet, picked)) {
+          setWalletError("MetaMask is on a different account than this login.");
+        }
+        return;
       }
+      // First connection: save this wallet on the account so future logins show it automatically.
+      const owner = await authAPI.checkWallet(picked.toLowerCase()).then((res) => res.data?.data?.status).catch(() => null);
+      if (owner === "other_user") {
+        setWalletError("This MetaMask account is already linked to another user in this system. Select a different account in MetaMask.");
+        return;
+      }
+      await linkWallet(picked);
     } catch (err) {
       console.error("Wallet connection failed:", err);
+      setWalletError(err.code === -32002
+        ? "MetaMask already has a request open. Click the MetaMask icon to finish it."
+        : err.code === 4001 ? "Connection was cancelled in MetaMask." : (err.response?.data?.message || err.message || "Could not connect MetaMask."));
     } finally {
       setConnecting(false);
     }
   };
 
-  const handleLinkCurrentMetaMask = async () => {
-    if (!metaMaskAccount) return;
-    setLinking(true);
-    try {
-      await linkWallet(metaMaskAccount);
-    } catch (err) {
-      alert(err.response?.data?.message || err.message || "Failed to link wallet to profile");
-    } finally {
-      setLinking(false);
-    }
-  };
-
   const switchMetaMaskAccount = async () => {
+    triedConnect.current = true;
     if (!window.ethereum) return;
     try {
-      await window.ethereum.request({
-        method: "wallet_requestPermissions",
-        params: [{ eth_accounts: {} }],
-      });
-      const accounts = await window.ethereum.request({ method: "eth_accounts" });
+      setWalletError("");
+      let accounts;
+      if (userWallet) {
+        accounts = await selectLinkedWallet(userWallet);
+      } else {
+        await window.ethereum.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
+        accounts = await window.ethereum.request({ method: "eth_accounts" });
+      }
       if (accounts && accounts.length > 0) {
-        setMetaMaskAccount(accounts[0]);
+        const picked = accounts.find((a) => sameWallet(userWallet, a)) || accounts[0];
+        setMetaMaskAccount(picked);
+        setWalletError(userWallet && !sameWallet(userWallet, picked)
+          ? "MetaMask is still on a different account. Tick the wallet linked to this login."
+          : "");
       }
     } catch (err) {
       console.warn("Account switch request error:", err);
+      setWalletError(err?.message || "Could not switch the MetaMask account.");
     }
   };
 
   // Nav links are strictly filtered based on the active user role view
   const navLinks = currentConfig.navLinks || [];
 
-  const formatAddr = (addr) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+
+  const controls = (
+    <>
+            {/* Global Currency Picker */}
+            <CurrencyPicker />
+
+            {isWrongNetwork && (
+              <button
+                onClick={checkAndSwitchNetwork}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/20"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Switch Network (31337)
+              </button>
+            )}
+
+            {isAuthenticated ? (
+              <div className="relative flex items-center gap-2">
+                {userWallet ? (
+                  <>
+                    <div className="hidden sm:flex flex-col text-right whitespace-nowrap">
+                      <span className="text-xs text-zinc-400">Demo balance</span>
+                      <span className="text-xs font-semibold text-emerald-400">
+                        {mUsdBalance == null ? (balanceError || "Loading balance…") : formatMUSD(mUsdBalance, { showCode: true })}
+                      </span>
+                    </div>
+
+                    {/* The wallet saved on this account is always shown. If MetaMask is not
+                        connected to it yet, the chip doubles as the connect button. */}
+                    <button
+                      type="button"
+                      onClick={isSynced ? undefined : isMismatch ? switchMetaMaskAccount : connectWallet}
+                      disabled={connecting}
+                      className={`flex items-center gap-2 px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-300 ${isSynced ? "cursor-default" : "hover:bg-zinc-800 cursor-pointer"}`}
+                      title={isSynced ? `Connected in MetaMask: ${userWallet}` : `Your wallet ${userWallet}. Click to connect it in MetaMask.`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${isSynced ? "bg-emerald-400 animate-pulse" : "bg-zinc-500"}`} />
+                      <span>{formatAddr(userWallet)}</span>
+                      {!isSynced && (
+                        <span className="font-sans text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
+                          {connecting ? "…" : "Connect"}
+                        </span>
+                      )}
+                    </button>
+                  </>
+                ) : (
+                  // No wallet saved yet: connecting MetaMask once saves it on the account.
+                  <button
+                    id="navbar-add-wallet-btn"
+                    onClick={connectWallet}
+                    disabled={connecting}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-emerald-500/20 transition-all cursor-pointer disabled:opacity-60"
+                    title="Connect MetaMask and save the wallet on your account"
+                  >
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span>{connecting ? "Connecting…" : "Connect wallet"}</span>
+                  </button>
+                )}
+
+                {(() => {
+                  const key = `${metaMaskAccount}|${userWallet}`;
+                  const wrongAccount = Boolean(userWallet && mmConnected && !isSynced);
+                  if (!(walletError || wrongAccount) || dismissedKey === key) return null;
+                  return (
+                    <div role="alert" className="absolute right-0 top-full mt-2 z-50 w-72 max-w-[calc(100vw-2rem)] p-3 rounded-xl border border-rose-500/40 bg-zinc-950 text-xs text-rose-200 shadow-xl">
+                      <div className="flex gap-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                        <span className="flex-1 leading-snug">
+                          {walletError || "MetaMask is on a different account than this login."}
+                          {userWallet && <span className="block mt-1 text-zinc-400">This login uses <span className="font-mono text-zinc-200">{formatAddr(userWallet)}</span>.</span>}
+                        </span>
+                        <button onClick={() => { setWalletError(""); setDismissedKey(key); }} className="text-zinc-400 hover:text-white cursor-pointer" aria-label="Dismiss">×</button>
+                      </div>
+                      {userWallet && (
+                        <button onClick={switchMetaMaskAccount} className="mt-3 w-full px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-bold cursor-pointer">
+                          Change account
+                        </button>
+                      )}
+                      <details className="mt-2 text-zinc-400">
+                        <summary className="cursor-pointer hover:text-white">Account not in MetaMask?</summary>
+                        <p className="mt-1 leading-snug">{walletImportHelp}</p>
+                      </details>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : null}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <>
+        <div className="flex items-center gap-2">{controls}</div>
+        <AddWalletModal isOpen={showAddWalletModal} onClose={() => setShowAddWalletModal(false)} />
+      </>
+    );
+  }
 
   return (
     <>
@@ -243,97 +389,7 @@ export default function Navbar() {
               </div>
             )}
 
-            {/* Global Currency Picker */}
-            <CurrencyPicker />
-
-            {isWrongNetwork && (
-              <button
-                onClick={checkAndSwitchNetwork}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/20"
-              >
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Switch Network (31337)
-              </button>
-            )}
-
-            {isAuthenticated ? (
-              displayWallet ? (
-                <div className="flex items-center gap-2">
-                  <div className="hidden sm:flex flex-col text-right whitespace-nowrap">
-                    <span className="text-xs text-zinc-400">Balance</span>
-                    <span className="text-xs font-semibold text-emerald-400">
-                      {mUsdBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })} mUSD
-                    </span>
-                    {currency !== "USD" && (
-                      <span className="text-[10px] text-zinc-400 font-mono whitespace-nowrap">
-                        ≈ {formatMUSD(mUsdBalance)}
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    onClick={isMismatch ? switchMetaMaskAccount : (isDisconnectedMM ? connectWallet : undefined)}
-                    className={`flex items-center gap-2 px-3 py-1.5 bg-zinc-900 border rounded-lg text-xs font-mono transition-all ${
-                      isMismatch
-                        ? "border-amber-500/40 text-amber-300 hover:bg-amber-500/10 cursor-pointer"
-                        : isDisconnectedMM
-                        ? "border-zinc-700 text-zinc-400 hover:bg-zinc-800 cursor-pointer"
-                        : "border-zinc-800 text-zinc-300"
-                    }`}
-                    title={
-                      isMismatch
-                        ? `MetaMask is currently on ${formatAddr(metaMaskAccount)}. Click to switch MetaMask to your logged-in wallet (${formatAddr(displayWallet)}).`
-                        : isDisconnectedMM
-                        ? "MetaMask is not connected. Click to connect."
-                        : "Your authenticated wallet (MetaMask is synced)"
-                    }
-                  >
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        isMismatch
-                          ? "bg-amber-400"
-                          : isDisconnectedMM
-                          ? "bg-zinc-500"
-                          : "bg-emerald-400 animate-pulse"
-                      }`}
-                    ></div>
-                    <span>{formatAddr(displayWallet)}</span>
-                    {isMismatch && (
-                      <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 py-0.5 rounded font-sans uppercase font-bold">
-                        Sync MM
-                      </span>
-                    )}
-                    {isDisconnectedMM && (
-                      <span className="text-[9px] bg-blue-500/20 text-blue-300 px-1 py-0.5 rounded font-sans uppercase font-bold">
-                        Connect MM
-                      </span>
-                    )}
-                  </div>
-
-                  {/* 1-click button to save active MetaMask wallet as account wallet */}
-                  {metaMaskAccount && (!userWallet || isMismatch) && (
-                    <button
-                      onClick={handleLinkCurrentMetaMask}
-                      disabled={linking}
-                      className="hidden md:flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-lg transition-all cursor-pointer"
-                      title={`Set ${formatAddr(metaMaskAccount)} as your official account wallet`}
-                    >
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      <span>{linking ? "Linking..." : "Link to Account"}</span>
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <button
-                  id="navbar-add-wallet-btn"
-                  onClick={() => setShowAddWalletModal(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02] cursor-pointer"
-                  title="Link an Ethereum wallet address to your account"
-                >
-                  <PlusCircle className="w-3.5 h-3.5" />
-                  <span>Add Wallet</span>
-                </button>
-              )
-            ) : null}
+            {controls}
           </div>
 
           {/* Auth Control: Logout / Login Button */}

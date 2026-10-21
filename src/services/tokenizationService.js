@@ -6,17 +6,21 @@ const API_BASE = "http://localhost:5001/api/tokenization";
 /**
  * Fetch verified assets eligible for tokenization
  */
-export async function fetchVerifiedAssets(ownerWallet = null) {
+export async function fetchVerifiedAssets(ownerWallet = null, mine = false) {
   try {
-    const url = ownerWallet
+    const url = mine ? `${API_BASE}/verified-assets?mine=true` : ownerWallet
       ? `${API_BASE}/verified-assets?owner=${ownerWallet}`
       : `${API_BASE}/verified-assets`;
-    const res = await fetch(url);
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    const res = await fetch(url, mine ? { headers: { Authorization: `Bearer ${user?.token || ""}` } } : {});
     const json = await res.json();
-    return json.success ? json.data : [];
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || json.message || "Unable to load verified assets");
+    }
+    return json.data;
   } catch (err) {
     console.error("Failed to fetch verified assets:", err);
-    return [];
+    throw err;
   }
 }
 
@@ -30,7 +34,7 @@ export async function fetchTokenizationPreview(assetId, callerWallet = null) {
       : `${API_BASE}/preview/${assetId}`;
     const res = await fetch(url);
     const json = await res.json();
-    if (!json.success) throw new Error(json.error || "Failed to load preview");
+    if (!res.ok || !json.success) throw new Error(json.error || json.message || "Failed to load preview");
     return json.data;
   } catch (err) {
     console.error("Failed to fetch tokenization preview:", err);
@@ -131,8 +135,30 @@ export async function executeOwnerTokenization(assetId, onStatusUpdate = () => {
 
   // 2. Obtain signer and contracts
   onStatusUpdate("Connecting MetaMask signer...");
-  const { tokenContract, runner } = await getContracts(true);
+  const { tokenContract, registryContract, runner } = await getContracts(true);
   const signerAddress = await runner.getAddress();
+
+  onStatusUpdate("Checking asset registration and approval...");
+  if (!Number.isSafeInteger(Number(assetId)) || Number(assetId) <= 0) {
+    throw new Error("Register this asset on the current blockchain and obtain approval before tokenizing.");
+  }
+  let registered;
+  try {
+    registered = await registryContract.getAsset(assetId);
+  } catch (err) {
+    if (err.reason === "Asset does not exist") {
+      throw new Error("This asset is missing from the current blockchain. Refresh the preview, register the asset and obtain on-chain approval.");
+    }
+    throw err;
+  }
+  if (registered.issuer.toLowerCase() !== signerAddress.toLowerCase()) {
+    throw new Error("Connect the wallet that registered this asset before tokenizing.");
+  }
+  if (Number(registered.status) !== 1) {
+    throw new Error(Number(registered.status) === 2
+      ? "This asset is already tokenized."
+      : "This asset must be approved on-chain before tokenization.");
+  }
 
   // 3. Initiate contract call
   onStatusUpdate("Please confirm the tokenization transaction in MetaMask...");

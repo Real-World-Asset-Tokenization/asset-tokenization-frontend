@@ -1,494 +1,477 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
-import Navbar from "../components/Navbar";
-import { useCurrency } from "../context/CurrencyContext";
-import { fetchVerifiedAssets } from "../services/tokenizationService";
-import { getTokenBalance, getPaymentTokenBalance, getContractAddresses } from "../services/contractService";
 import {
-  PieChart,
-  Wallet,
-  Building,
-  Coins,
-  TrendingUp,
-  Clock,
-  ShieldCheck,
-  ArrowUpRight,
-  ShoppingBag,
-  Info,
-  ExternalLink,
-  Sparkles,
-  Layers,
-  CheckCircle2,
-  Users,
-  RefreshCw,
-  PlusCircle
+  Wallet, Building2, Coins, ShoppingBag, RefreshCw, PlusCircle, Receipt, MapPin, Download, Printer, Copy, Check,
+  FileText, Award, TrendingUp, LayoutGrid, ShieldCheck,
 } from "lucide-react";
-
+import { useCurrency } from "../context/CurrencyContext";
 import { useAuth } from "../context/AuthContext";
+import { fetchVerifiedAssets, fetchTokenizationStatus } from "../services/tokenizationService";
+import { getVerifiedTokenBalance, getPaymentTokenBalance } from "../services/contractService";
+import { loadMyOffers, loadMyTrades, isLive } from "../services/tokenSales";
+import { valuationApi } from "../services/valuationApi";
 import { resolveUserWallet } from "../lib/walletResolver";
+import { isAssetOwnedByUser } from "../lib/assetOwnership";
 import AddWalletModal from "../components/AddWalletModal";
+import ValuationPanel from "../components/ValuationPanel";
+import { Card, Stat, Badge, ActionButton, Skeleton, Empty, fmtDate, pageClass } from "../components/ui/dash";
 
+const short = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
+const TABS = [["overview", "Overview", LayoutGrid], ["valuation", "Valuation", TrendingUp], ["report", "Report", FileText], ["certificate", "Certificate", Award]];
+
+// ---- small helpers -------------------------------------------------------------------------
+function download(filename, text, type = "text/csv;charset=utf-8") {
+  const url = URL.createObjectURL(new Blob(["﻿" + text], { type }));
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const csvCell = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+const csv = (rows) => rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+const stamp = (d = new Date()) => d.toISOString().slice(0, 10);
+
+function CopyButton({ text, label = "Copy" }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button type="button" onClick={() => navigator.clipboard?.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1500); }).catch(() => {})}
+      className="no-print inline-flex items-center gap-1 text-xs font-semibold text-[#98a2c3] hover:text-white">
+      {done ? <><Check className="w-3.5 h-3.5 text-emerald-300" />Copied</> : <><Copy className="w-3.5 h-3.5" />{label}</>}
+    </button>
+  );
+}
+
+// ---- printable "paper" documents (always dark text on white, in both themes) ----------------
+const INK = { text: "#111827", mute: "#4b5563", line: "#d1d5db", soft: "#f3f4f6", green: "#15803d" };
+function PaperRow({ k, v, mono }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "7px 0", borderBottom: `1px solid ${INK.line}`, fontSize: 13 }}>
+      <span style={{ color: INK.mute }}>{k}</span>
+      <span style={{ color: INK.text, fontWeight: 600, textAlign: "right", wordBreak: "break-all", fontFamily: mono ? "ui-monospace, monospace" : undefined, fontSize: mono ? 12 : 13 }}>{v}</span>
+    </div>
+  );
+}
+function PaperSection({ n, title, children }) {
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div style={{ color: INK.green, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>{n}. {title}</div>
+      {children}
+    </div>
+  );
+}
+function PaperTable({ head, rows, empty }) {
+  if (!rows.length) return <div style={{ color: INK.mute, fontSize: 13, padding: "6px 0" }}>{empty}</div>;
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+      <thead><tr>{head.map((h, i) => <th key={h} style={{ textAlign: i === 0 ? "left" : "right", color: INK.mute, fontWeight: 600, padding: "6px 4px", borderBottom: `2px solid ${INK.line}` }}>{h}</th>)}</tr></thead>
+      <tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j} style={{ textAlign: j === 0 ? "left" : "right", color: INK.text, padding: "6px 4px", borderBottom: `1px solid ${INK.line}` }}>{c}</td>)}</tr>)}</tbody>
+    </table>
+  );
+}
+
+// Everything the report and certificate need for one property, from real data only.
+function buildFacts(a, det, trades, offers, formatLKR, formatMUSD) {
+  const tokenId = a.blockchainAssetId ?? a.assetId;
+  const record = det?.status?.databaseRecord;
+  const listed = offers == null ? null : offers.filter((o) => Number(o.assetId) === Number(tokenId) && isLive(o)).reduce((s, o) => s + o.amount, 0);
+  const free = listed == null ? null : Math.max(0, a.balance - listed);
+  const myTrades = (trades || []).filter((t) => Number(t.assetId) === Number(tokenId));
+  return {
+    tokenId, record, listed, free, myTrades,
+    tokenized: a.tokenizationStatus === "TOKENIZED",
+    entries: det?.history?.entries || [],
+    earned: myTrades.filter((t) => t.side === "Sold").reduce((s, t) => s + (t.received || 0), 0),
+    spent: myTrades.filter((t) => t.side === "Bought").reduce((s, t) => s + t.total, 0),
+    formatLKR, formatMUSD,
+  };
+}
+
+function AssetReport({ a, f, owner, wallet, currency }) {
+  const now = new Date();
+  const own = a.ownershipPercentage.toFixed(2);
+  return (
+    <div className="print-area" style={{ background: "#fff", color: INK.text, borderRadius: 12, padding: "32px 34px", maxWidth: 820, margin: "0 auto", boxShadow: "0 10px 40px -16px rgba(0,0,0,0.6)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, borderBottom: `3px solid ${INK.green}`, paddingBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: INK.green, letterSpacing: "0.1em" }}>TERRATOKEN</div>
+          <div style={{ fontSize: 26, fontWeight: 800, marginTop: 4 }}>Asset report</div>
+          <div style={{ fontSize: 15, color: INK.mute, marginTop: 2 }}>{a.name}</div>
+        </div>
+        <div style={{ textAlign: "right", fontSize: 12, color: INK.mute, lineHeight: 1.6 }}>
+          <div>Report no. <b style={{ color: INK.text }}>R-{a.assetId}-{stamp(now).replace(/-/g, "")}</b></div>
+          <div>Generated {now.toLocaleString()}</div>
+          <div>Prepared for {owner || "Asset owner"}</div>
+          <div style={{ fontFamily: "ui-monospace, monospace" }}>{short(wallet)}</div>
+        </div>
+      </div>
+
+      <PaperSection n={1} title="Property">
+        <PaperRow k="Name" v={a.name} />
+        <PaperRow k="Location" v={a.location || "Not provided"} />
+        <PaperRow k="Type" v={(a.propertyType || a.assetType || "—").toString().replace(/_/g, " ")} />
+        <PaperRow k="Status" v={f.tokenized ? "Tokens created" : "Verified, tokens not created yet"} />
+        <PaperRow k="Token number" v={`#${f.tokenId}${a.symbol ? ` · ${a.symbol}` : ""}`} />
+        {a.documentHash && <PaperRow k="Deed fingerprint" v={a.documentHash} mono />}
+      </PaperSection>
+
+      <PaperSection n={2} title="Valuation and pricing">
+        <PaperRow k="Approved property value" v={f.formatLKR(a.valuationLKR)} />
+        <PaperRow k="Total tokens" v={a.totalShares.toLocaleString()} />
+        <PaperRow k="Starting price per token" v={a.referencePriceLKR != null ? f.formatLKR(a.referencePriceLKR) : "—"} />
+        <PaperRow k="Valuation versions on record" v={f.entries.length || "—"} />
+      </PaperSection>
+
+      <PaperSection n={3} title="Token holding">
+        <PaperRow k="Tokens you hold" v={`${a.balance.toLocaleString()} (${own}% of the property)`} />
+        <PaperRow k="Released for sale" v={f.listed == null ? "Unavailable" : f.listed.toLocaleString()} />
+        <PaperRow k="Not released (free in wallet)" v={f.free == null ? "Unavailable" : f.free.toLocaleString()} />
+        <PaperRow k="Estimated worth of your tokens" v={a.indicativeHoldingVal != null ? f.formatLKR(a.indicativeHoldingVal) : "—"} />
+      </PaperSection>
+
+      <PaperSection n={4} title="Valuation history">
+        <PaperTable head={["Version", "Approved value", "Effective", "Change"]}
+          rows={[...f.entries].reverse().map((h) => [`v${h.version}`, f.formatLKR(h.approvedValue), h.effectiveDate ? fmtDate(h.effectiveDate) : "—", h.changePercent != null ? `${Number(h.changePercent) > 0 ? "+" : ""}${h.changePercent}%` : "—"])}
+          empty="No valuation history has been published for this property." />
+      </PaperSection>
+
+      <PaperSection n={5} title="Sales activity (this property)">
+        <PaperTable head={["Date", "Type", "Tokens", "Total (mUSD)", "You received"]}
+          rows={f.myTrades.map((t) => [t.at.toLocaleDateString(), t.side, t.amount.toLocaleString(), f.formatMUSD(t.total), t.received != null ? f.formatMUSD(t.received) : "—"])}
+          empty="No completed trades for this property yet." />
+        {f.myTrades.length > 0 && <div style={{ marginTop: 8, fontSize: 13, color: INK.mute }}>Received from sales: <b style={{ color: INK.text }}>{f.formatMUSD(f.earned)}</b> · Spent on purchases: <b style={{ color: INK.text }}>{f.formatMUSD(f.spent)}</b></div>}
+      </PaperSection>
+
+      <div style={{ marginTop: 26, paddingTop: 12, borderTop: `1px solid ${INK.line}`, fontSize: 11, color: INK.mute, lineHeight: 1.6 }}>
+        Amounts are shown in {currency} using the app's indicative exchange rates. Token balances and trades are read from the demo blockchain network; values are indicative and are not an offer, a guaranteed sale price or financial advice.
+      </div>
+    </div>
+  );
+}
+
+function Certificate({ a, f, wallet, formatLKR }) {
+  const r = f.record;
+  const txHash = r?.mintingTxHash;
+  const certNo = txHash ? `TC-${txHash.slice(2, 10).toUpperCase()}` : "";
+  const issuedOn = r?.tokenizedAt ? new Date(r.tokenizedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : null;
+  const supply = r?.approvedTokenSupply ?? a.totalShares;
+  return (
+    <div className="print-area" style={{ background: "#fff", borderRadius: 12, maxWidth: 820, margin: "0 auto", padding: 14, boxShadow: "0 10px 40px -16px rgba(0,0,0,0.6)" }}>
+      <div style={{ border: `3px double ${INK.green}`, borderRadius: 6, padding: "34px 36px", color: INK.text, textAlign: "center" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.18em", color: INK.green }}>TERRATOKEN · REAL ASSET TOKENIZATION</div>
+        <div style={{ fontSize: 34, fontWeight: 800, marginTop: 10, fontFamily: "Georgia, 'Times New Roman', serif" }}>Certificate of Tokenization</div>
+        <div style={{ width: 90, height: 3, background: INK.green, margin: "14px auto 18px" }} />
+        <div style={{ fontSize: 14, color: INK.mute }}>This certifies that the property</div>
+        <div style={{ fontSize: 28, fontWeight: 700, margin: "6px 0 2px", fontFamily: "Georgia, 'Times New Roman', serif" }}>{a.name}</div>
+        <div style={{ fontSize: 14, color: INK.mute }}>{a.location || ""}</div>
+        <div style={{ fontSize: 14, color: INK.text, maxWidth: 560, margin: "16px auto 0", lineHeight: 1.7 }}>
+          has been verified and divided into <b>{Number(supply).toLocaleString()} digital tokens</b>, each representing an equal share of the property.
+          The tokens were issued to the owner wallet below{issuedOn ? <> on <b>{issuedOn}</b></> : null}.
+        </div>
+
+        <div style={{ textAlign: "left", margin: "24px auto 0", maxWidth: 600 }}>
+          <PaperRow k="Certificate number" v={certNo} mono />
+          <PaperRow k="Approved property value" v={formatLKR(r?.approvedValuation ?? a.valuationLKR)} />
+          <PaperRow k="Starting price per token" v={a.referencePriceLKR != null ? formatLKR(a.referencePriceLKR) : "—"} />
+          <PaperRow k="Token number" v={`#${f.tokenId}`} />
+          <PaperRow k="Issued to (owner wallet)" v={r?.ownerWallet || wallet} mono />
+          <PaperRow k="Token contract" v={r?.contractAddress || "—"} mono />
+          <PaperRow k="Transaction ID" v={txHash} mono />
+        </div>
+
+        <div style={{ marginTop: 22, fontSize: 11, color: INK.mute, lineHeight: 1.6 }}>
+          Recorded on the demo test network and saved to the platform database. This certificate proves the tokens were created by the platform; it is not a legal title document.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- the page --------------------------------------------------------------------------------
 export default function OwnerPortfolio() {
   const { user } = useAuth();
-  const { formatLKR, formatMUSD } = useCurrency();
-  const [account, setAccount] = useState("");
+  const { formatLKR, formatMUSD, currency } = useCurrency();
+  const wallet = resolveUserWallet(user);
   const [loading, setLoading] = useState(true);
-  const [allAssets, setAllAssets] = useState([]);
-  const [holdings, setHoldings] = useState([]);
-  const [mUsdBalance, setMUsdBalance] = useState(0);
-  const [activeTab, setActiveTab] = useState("holdings"); // "holdings" | "eligible" | "all"
-  const [contractAddrs, setContractAddrs] = useState({});
-  const [showAddWalletModal, setShowAddWalletModal] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [loaded, setLoaded] = useState([]);
+  const [cash, setCash] = useState(null);
+  const [offers, setOffers] = useState(null);
+  const [trades, setTrades] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [tab, setTab] = useState("overview");
+  const [detail, setDetail] = useState({});
+  const [showAddWallet, setShowAddWallet] = useState(false);
+  const requested = useRef(new Set());
 
-  useEffect(() => {
-    setContractAddrs(getContractAddresses());
-    detectMetaMaskAccount();
-
-    if (window.ethereum) {
-      const handleAccounts = (accounts) => {
-        if (accounts && accounts.length > 0) {
-          setAccount(accounts[0]);
-          loadHoldingsForAccount(accounts[0]);
-        } else {
-          detectMetaMaskAccount();
-        }
-      };
-      window.ethereum.on("accountsChanged", handleAccounts);
-      return () => {
-        if (window.ethereum?.removeListener) {
-          window.ethereum.removeListener("accountsChanged", handleAccounts);
-        }
-      };
-    }
-  }, [user]);
-
-  const connectWallet = async () => {
-    if (!window.ethereum) {
-      alert("Please install MetaMask to connect your wallet.");
-      return;
-    }
+  const load = useCallback(async () => {
+    if (!wallet) { setLoaded([]); setCash(null); setLoading(false); return; }
+    setLoading(true); setLoadError("");
+    requested.current.clear(); setDetail({});
     try {
-      const accs = await window.ethereum.request({ method: "eth_requestAccounts" });
-      if (accs && accs.length > 0) {
-        setAccount(accs[0]);
-        await loadHoldingsForAccount(accs[0]);
-      }
-    } catch (err) {
-      console.error("MetaMask connect error:", err);
-    }
-  };
-
-  const detectMetaMaskAccount = async () => {
-    let userAddr = null;
-    if (window.ethereum) {
-      try {
-        const accs = await window.ethereum.request({ method: "eth_accounts" });
-        if (accs && accs.length > 0) userAddr = accs[0];
-      } catch (e) {}
-    }
-    if (!userAddr) {
-      userAddr = user?.walletAddress || resolveUserWallet(user) || null;
-    }
-
-    if (!userAddr) {
-      setAccount("");
-      setHoldings([]);
-      setAllAssets([]);
-      setMUsdBalance(0);
-      setLoading(false);
-      return;
-    }
-    setAccount(userAddr);
-    loadHoldingsForAccount(userAddr);
-  };
-
-  const loadHoldingsForAccount = async (walletAddress) => {
-    if (!walletAddress) {
-      setHoldings([]);
-      setAllAssets([]);
-      setMUsdBalance(0);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const verifiedList = await fetchVerifiedAssets();
-      const mBal = await getPaymentTokenBalance(walletAddress);
-      setMUsdBalance(mBal);
-
-      const enriched = await Promise.all(
-        verifiedList.map(async (asset) => {
-          let bal = 0;
-          try {
-            bal = await getTokenBalance(walletAddress, asset.assetId);
-          } catch (e) {
-            bal = 0;
-          }
-
-          const totalShares = asset.totalShares || 1000;
-          const ownershipPct = totalShares > 0 ? ((bal / totalShares) * 100).toFixed(2) : "0.00";
-          const refPrice =
-            asset.referencePriceLKR ||
-            (asset.valuationLKR ? asset.valuationLKR / totalShares : 10000);
-          const indicativeHoldingVal = bal * refPrice;
-
-          return {
-            ...asset,
-            balance: bal,
-            totalShares,
-            ownershipPercentage: parseFloat(ownershipPct),
-            referencePriceLKR: refPrice,
-            indicativeHoldingVal,
-          };
-        })
-      );
-
-      setAllAssets(enriched);
-      // Real active holdings: wallet actually holds > 0 tokens
-      const activeHoldings = enriched.filter((a) => a.balance > 0);
-      setHoldings(activeHoldings);
+      const [verified, mBal, offerRows, tradeRows] = await Promise.all([
+        fetchVerifiedAssets(null, true),
+        getPaymentTokenBalance(wallet),
+        loadMyOffers(wallet).then((r) => r.offers).catch(() => null),
+        loadMyTrades(wallet).catch(() => null),
+      ]);
+      setCash(mBal); setOffers(offerRows); setTrades(tradeRows);
+      const enriched = await Promise.all(verified.map(async (asset) => {
+        let bal = 0;
+        try { bal = await getVerifiedTokenBalance(wallet, asset); } catch { bal = 0; }
+        const totalShares = asset.totalShares || 1000;
+        const refPrice = asset.referencePriceLKR || (asset.valuationLKR ? asset.valuationLKR / totalShares : null);
+        return { ...asset, balance: bal, totalShares, ownershipPercentage: totalShares > 0 ? (bal / totalShares) * 100 : 0, referencePriceLKR: refPrice, indicativeHoldingVal: refPrice != null ? bal * refPrice : null };
+      }));
+      setLoaded(enriched);
     } catch (err) {
       console.error("Error loading owner holdings:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      setLoadError(err.message || "Unable to load your properties.");
+    } finally { setLoading(false); }
+  }, [wallet]);
 
-  const totalPortfolioValueLKR = holdings.reduce((sum, h) => sum + h.indicativeHoldingVal, 0);
-  const totalTokensOwned = holdings.reduce((sum, h) => sum + h.balance, 0);
+  useEffect(() => {
+    load();
+    if (!window.ethereum?.on) return undefined;
+    window.ethereum.on("accountsChanged", load);
+    return () => window.ethereum.removeListener?.("accountsChanged", load);
+  }, [load]);
 
-  // Eligible assets to tokenize
-  const eligibleAssets = allAssets.filter((a) => a.isEligibleForTokenization);
+  const assets = loaded.filter((a) => isAssetOwnedByUser(a, user));
+  const selected = assets.find((a) => a.assetId === selectedId) || assets.find((a) => a.balance > 0) || assets[0] || null;
+
+  // Status record and valuation history for the selected property, fetched once.
+  useEffect(() => {
+    if (!selected || requested.current.has(selected.assetId)) return;
+    requested.current.add(selected.assetId);
+    const key = selected.assetId, tokenId = selected.blockchainAssetId ?? selected.assetId;
+    setDetail((d) => ({ ...d, [key]: { loading: true } }));
+    Promise.all([fetchTokenizationStatus(selected.assetId).catch(() => null), valuationApi.history(tokenId).catch(() => null)])
+      .then(([status, history]) => setDetail((d) => ({ ...d, [key]: { loading: false, status, history } })));
+  }, [selected]);
+
+  const held = assets.filter((a) => a.balance > 0);
+  const totalValueLKR = held.reduce((s, h) => s + (h.indicativeHoldingVal || 0), 0);
+  const totalTokens = held.reduce((s, h) => s + h.balance, 0);
+  const v = (x) => (loading ? "…" : x);
+  const det = selected ? detail[selected.assetId] : null;
+  const f = selected ? buildFacts(selected, det, trades, offers, formatLKR, formatMUSD) : null;
+
+  const exportPortfolio = () => download(`portfolio-${stamp()}.csv`, csv([
+    ["Property", "Location", "Status", "Tokens held", "Total tokens", "Ownership %", "Approved value (LKR)", "Price per token (LKR)", "Estimated worth (LKR)"],
+    ...assets.map((a) => [a.name, a.location || "", a.tokenizationStatus === "TOKENIZED" ? "Tokens created" : "Not tokenized", a.balance, a.totalShares, a.ownershipPercentage.toFixed(2), a.valuationLKR, a.referencePriceLKR ?? "", a.indicativeHoldingVal ?? ""]),
+  ]));
+  const exportAsset = () => download(`report-${(selected.name || "asset").replace(/\W+/g, "-").toLowerCase()}-${stamp()}.csv`, csv([
+    ["Asset report", selected.name], ["Generated", new Date().toLocaleString()], ["Prepared for", `${user?.name || ""} ${wallet}`], [],
+    ["Property"], ["Location", selected.location || ""], ["Type", selected.propertyType || selected.assetType || ""], ["Status", f.tokenized ? "Tokens created" : "Not tokenized"], ["Token number", f.tokenId], ["Deed fingerprint", selected.documentHash || ""], [],
+    ["Valuation and pricing"], ["Approved value (LKR)", selected.valuationLKR], ["Total tokens", selected.totalShares], ["Price per token (LKR)", selected.referencePriceLKR ?? ""], [],
+    ["Token holding"], ["Tokens held", selected.balance], ["Ownership %", selected.ownershipPercentage.toFixed(2)], ["Released for sale", f.listed ?? ""], ["Free in wallet", f.free ?? ""], ["Estimated worth (LKR)", selected.indicativeHoldingVal ?? ""], [],
+    ["Valuation history"], ["Version", "Approved value (LKR)", "Effective", "Change %"], ...f.entries.map((h) => [h.version, h.approvedValue, h.effectiveDate || "", h.changePercent ?? ""]), [],
+    ["Sales activity (mUSD)"], ["Date", "Type", "Tokens", "Total", "Received", "Transaction"], ...f.myTrades.map((t) => [t.at.toISOString(), t.side, t.amount, t.total, t.received ?? "", t.txHash]),
+  ]));
+
+  if (!wallet) {
+    return (
+      <div className={pageClass}>
+        <div className="rise"><h1 className="text-2xl sm:text-[2rem] font-bold text-white">Holdings & valuations</h1></div>
+        <Card title="Link a wallet to get started" subtitle="Your tokens live in a digital wallet. Link yours to see your properties, valuations, reports and certificates.">
+          <ActionButton primary icon={PlusCircle} onClick={() => setShowAddWallet(true)}>Link my wallet</ActionButton>
+        </Card>
+        <AddWalletModal isOpen={showAddWallet} onClose={() => setShowAddWallet(false)} onSuccess={load} />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col selection:bg-emerald-500/30 selection:text-emerald-200">
-      <Navbar />
+    <div className={pageClass}>
+      <style>{`@page { margin: 14mm; } @media print { body * { visibility: hidden !important; } .print-area, .print-area * { visibility: visible !important; } .print-area { position: absolute !important; left: 0; top: 0; width: 100% !important; max-width: none !important; box-shadow: none !important; } .no-print { display: none !important; } }`}</style>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Header Banner */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-zinc-900 via-zinc-900 to-indigo-950/40 border border-zinc-800 p-8 shadow-2xl backdrop-blur-xl">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                <ShieldCheck className="w-4 h-4" />
-                <span>Authoritative On-Chain Holdings</span>
-              </div>
-              <h1 className="text-3xl font-extrabold text-white tracking-tight">
-                Real Asset Portfolio & Blockchain Holdings
-              </h1>
-              <p className="text-sm text-zinc-400 max-w-2xl leading-relaxed">
-                Directly querying ERC-1155 smart contract balances on Hardhat Localhost (Chain ID 31337).
-                Real-world asset valuations are synchronized with Azure Cosmos DB.
-              </p>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-              <button
-                onClick={() => loadHoldingsForAccount(account)}
-                className="px-4 py-3 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 border border-zinc-700 flex items-center gap-2 transition-all cursor-pointer"
-                title="Refresh balances from blockchain"
-              >
-                <RefreshCw className="w-4 h-4 text-emerald-400" />
-                <span>Sync On-Chain</span>
-              </button>
-              <Link
-                to="/marketplace"
-                className="px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-xs font-bold text-white shadow-lg shadow-blue-500/20 flex items-center gap-1.5"
-              >
-                <ShoppingBag className="w-4 h-4" />
-                Token Marketplace
-              </Link>
-            </div>
-          </div>
+      <div className="no-print rise flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-[2rem] font-bold tracking-[-0.02em] leading-tight text-white">Holdings & valuations</h1>
+          <p className="mt-1.5 max-w-3xl text-[15px] leading-relaxed text-[#98a2c3]">Pick a property to see where its tokens are, what it is worth, and to create a report or a tokenization certificate.</p>
         </div>
-
-        {/* Connected Wallet Indicator */}
-        <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-              account ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-amber-500/10 border border-amber-500/30"
-            }`}>
-              {account ? <ShieldCheck className="w-4 h-4 text-emerald-400" /> : <Wallet className="w-4 h-4 text-amber-400" />}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className={`text-xs font-semibold uppercase tracking-wider ${
-                  account ? "text-emerald-400" : "text-amber-400"
-                }`}>
-                  {account ? "Connected Owner Wallet" : "No Wallet Connected"}
-                </span>
-                {account && (
-                  <span className="font-mono text-xs text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded-md border border-zinc-700">
-                    {account.slice(0, 6)}...{account.slice(-4)}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                {account
-                  ? "Authoritative ERC-1155 balances read from local blockchain node."
-                  : "Connect your MetaMask wallet to view your personal minted token shares."}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {account ? (
-              <button
-                onClick={() => loadHoldingsForAccount(account)}
-                className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 border border-zinc-700 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Sync Holdings</span>
-              </button>
-            ) : (
-              <button
-                onClick={connectWallet}
-                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <Wallet className="w-3.5 h-3.5" />
-                <span>Connect MetaMask</span>
-              </button>
-            )}
-          </div>
+        <div className="flex flex-wrap gap-2 sm:gap-3">
+          <ActionButton onClick={load} icon={RefreshCw}>Refresh</ActionButton>
+          <ActionButton onClick={exportPortfolio} icon={Download}>Export all (CSV)</ActionButton>
         </div>
+      </div>
 
-        {/* Portfolio Valuation KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-5">
-          <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6 space-y-1">
-            <span className="text-xs text-zinc-400 font-medium">Indicative Holding Valuation</span>
-            <div className="text-2xl font-black text-emerald-400">
-              {formatLKR(totalPortfolioValueLKR)}
-            </div>
-            <p className="text-[11px] text-zinc-500">
-              Σ (Real On-Chain Shares × Initial Reference Price)
-            </p>
-          </div>
+      {loadError && <p role="alert" className="no-print text-sm text-amber-300 flex flex-wrap items-center gap-2">{loadError}<button onClick={load} className="underline inline-flex items-center gap-1"><RefreshCw className="w-3 h-3" /> Retry</button></p>}
 
-          <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6 space-y-1">
-            <span className="text-xs text-zinc-400 font-medium">Active Token Shares Held</span>
-            <div className="text-2xl font-black text-white">
-              {totalTokensOwned.toLocaleString()} <span className="text-xs text-zinc-400 font-normal">Fractions</span>
-            </div>
-            <p className="text-[11px] text-zinc-500 font-mono">
-              Live balanceOf on AssetToken.sol
-            </p>
-          </div>
+      <div className="no-print grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+        <Stat icon={Building2} label="Properties" value={v(assets.length)} note={`${held.length} with tokens in your wallet`} />
+        <Stat icon={Coins} label="Tokens you hold" value={v(totalTokens.toLocaleString())} note="across all properties" />
+        <Stat icon={TrendingUp} label="Estimated worth" value={v(formatLKR(totalValueLKR))} tone="up" note="Tokens × starting price" />
+        <Stat icon={Wallet} label="Cash available" value={v(formatMUSD(cash))} note="Demo mUSD" />
+      </div>
 
-          <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6 space-y-1">
-            <span className="text-xs text-zinc-400 font-medium">Payment Liquidity (mUSD)</span>
-            <div className="text-2xl font-black text-blue-400">
-              {formatMUSD(mUsdBalance)}
-            </div>
-            <p className="text-[11px] text-zinc-500">
-              ERC-20 balance available for secondary trading
-            </p>
-          </div>
+      <div className="grid gap-6 xl:grid-cols-[300px_1fr] items-start">
+        {/* Property picker */}
+        <nav aria-label="Your properties" className="no-print rounded-2xl border border-[#1b2440] bg-[#0b1124] p-3 xl:sticky xl:top-24">
+          <p className="px-2 pt-1 pb-2 text-xs font-semibold uppercase tracking-wider text-[#98a2c3]">Your properties</p>
+          {loading ? <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}</div>
+            : !assets.length ? <p className="px-2 pb-2 text-sm text-[#98a2c3]">No verified properties yet. <Link to="/owner/assets/new" className="text-indigo-300 underline">Submit one</Link>.</p>
+            : <ul className="space-y-1.5">
+              {assets.map((a) => {
+                const on = selected?.assetId === a.assetId;
+                return (
+                  <li key={a.assetId}>
+                    <button type="button" onClick={() => setSelectedId(a.assetId)} aria-current={on ? "true" : undefined}
+                      className={`w-full text-left rounded-xl border px-3.5 py-3 ${on ? "border-emerald-500/50 bg-emerald-500/10" : "border-transparent hover:bg-[#141c33]"}`}>
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-white truncate">{a.name}</span>
+                        <span aria-hidden className="w-2 h-2 rounded-full shrink-0" style={{ background: a.tokenizationStatus === "TOKENIZED" ? "#1fe06f" : "#fbbf24" }} />
+                      </span>
+                      <span className="block text-xs text-[#98a2c3] mt-0.5">
+                        {a.tokenizationStatus === "TOKENIZED" ? `${a.balance.toLocaleString()} tokens · ${a.ownershipPercentage.toFixed(a.ownershipPercentage < 1 && a.ownershipPercentage > 0 ? 2 : 1)}%` : "Tokens not created yet"}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>}
+        </nav>
 
-          <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-6 space-y-1">
-            <span className="text-xs text-zinc-400 font-medium">Pricing Standard</span>
-            <div className="text-base font-bold text-indigo-400 flex items-center gap-1.5 pt-1">
-              <Sparkles className="w-4 h-4" />
-              Dual-Price Model
-            </div>
-            <p className="text-[11px] text-zinc-500">
-              Reference Price: LKR 10,000 / share
-            </p>
-          </div>
-        </div>
-
-        {/* Tab Filters */}
-        <div className="flex items-center gap-2 bg-zinc-900/90 p-1.5 rounded-2xl border border-zinc-800 w-fit">
-          <button
-            onClick={() => setActiveTab("holdings")}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === "holdings"
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            My Active Holdings ({holdings.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("eligible")}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === "eligible"
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            Ready for Tokenization ({eligibleAssets.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("all")}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === "all"
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            All Verified Assets ({allAssets.length})
-          </button>
-        </div>
-
-        {/* Holdings / Assets List */}
-        <div className="bg-zinc-900/90 border border-zinc-800 rounded-3xl overflow-hidden shadow-xl">
-          <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Coins className="w-4 h-4 text-emerald-400" />
-              <span>
-                {activeTab === "holdings"
-                  ? "Real On-Chain Fractional Asset Holdings"
-                  : activeTab === "eligible"
-                  ? "Verified Properties Ready to Tokenize"
-                  : "Complete Pipeline Portfolio Overview"}
-              </span>
-            </h3>
-            <span className="text-xs text-zinc-500 font-mono">
-              Contract: {contractAddrs.tokenAddress ? `${contractAddrs.tokenAddress.slice(0, 8)}...` : "Loading..."}
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="py-16 text-center text-xs text-zinc-400 space-y-2">
-              <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
-              <p>Querying real on-chain token balances from Hardhat...</p>
-            </div>
-          ) : !account ? (
-            <div className="py-16 text-center p-8 space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-zinc-800 border border-zinc-700/60 flex items-center justify-center mx-auto text-zinc-400">
-                <Wallet className="w-6 h-6 text-emerald-400" />
-              </div>
-              <div className="max-w-md mx-auto space-y-1">
-                <h4 className="text-base font-bold text-white">No Wallet Linked to This Account</h4>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Link your unique personal Ethereum wallet to view your tokenized property shares and tokenization pipeline.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowAddWalletModal(true)}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-bold rounded-xl hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-500/20 cursor-pointer"
-              >
-                <PlusCircle className="w-4 h-4" />
-                Add Wallet to Account
-              </button>
-            </div>
-          ) : activeTab === "holdings" && holdings.length === 0 ? (
-            <div className="py-16 text-center p-8 space-y-3">
-              <Building className="w-12 h-12 text-zinc-600 mx-auto" />
-              <h4 className="text-base font-bold text-zinc-200">No active token shares in this wallet</h4>
-              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
-                This connected wallet ({account.slice(0, 6)}...{account.slice(-4)}) does not currently hold any fractional tokens.
-              </p>
-              <button
-                onClick={() => setActiveTab("eligible")}
-                className="px-4 py-2 bg-emerald-600/20 text-emerald-400 text-xs font-semibold rounded-xl border border-emerald-500/30 hover:bg-emerald-600/30 cursor-pointer"
-              >
-                View Properties Ready to Tokenize →
-              </button>
-            </div>
+        {/* Selected property workspace */}
+        <div className="space-y-5 min-w-0">
+          {loading ? <Skeleton className="h-72 w-full rounded-2xl" /> : !selected ? (
+            <Card><Empty>Select a property to see its details.</Empty></Card>
           ) : (
-            <div className="divide-y divide-zinc-800">
-              {(activeTab === "holdings"
-                ? holdings
-                : activeTab === "eligible"
-                ? eligibleAssets
-                : allAssets
-              ).map((h) => (
-                <div
-                  key={h.assetId}
-                  className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-zinc-800/40 transition-colors"
-                >
-                  <div className="space-y-1.5 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-zinc-800 text-zinc-300 border border-zinc-700">
-                        ERC-1155 Token #{h.assetId}
-                      </span>
-                      <span className="text-xs text-indigo-400 font-mono font-semibold">{h.symbol}</span>
-                      {h.tokenizationStatus === "TOKENIZED" ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Tokenized On-Chain
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Ready for Minting
-                        </span>
-                      )}
-                    </div>
-                    <h4 className="text-base font-bold text-white">{h.name}</h4>
-                    <p className="text-xs text-zinc-400">
-                      Approved Net Asset Valuation: <span className="text-emerald-400 font-bold">{formatLKR(h.valuationLKR)}</span> • Total Approved Shares: {h.totalShares.toLocaleString()}
-                    </p>
-                    <p className="text-[11px] text-zinc-500 font-mono truncate max-w-md">
-                      Deed Hash: {h.documentHash}
-                    </p>
+            <>
+              <section className="no-print rounded-2xl border border-[#1b2440] bg-[#0b1124] p-5 sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-semibold text-white">{selected.name}</h2>
+                    <p className="text-sm text-[#98a2c3] mt-0.5 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{[selected.location, selected.propertyType].filter(Boolean).join(" · ") || "Location not provided"}</span></p>
+                  </div>
+                  <Badge tone={f.tokenized ? "good" : "warn"}>{f.tokenized ? "Tokens created" : "Ready to create tokens"}</Badge>
+                </div>
+                <div role="tablist" aria-label="Property sections" className="mt-4 flex gap-1 overflow-x-auto">
+                  {TABS.map(([k, label, Icon]) => (
+                    <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className="px-4 py-2 text-sm font-semibold whitespace-nowrap inline-flex items-center gap-2"><Icon className="w-4 h-4" />{label}</button>
+                  ))}
+                </div>
+              </section>
+
+              {tab === "overview" && (
+                <div className="space-y-5">
+                  <Card title="Where your tokens are" subtitle={`This property has ${selected.totalShares.toLocaleString()} tokens in total.`}>
+                    {(() => {
+                      const others = Math.max(0, selected.totalShares - selected.balance);
+                      const parts = [["Free in your wallet", f.free, "#38bdf8"], ["Released for sale", f.listed, "#fbbf24"], ["Held by others", others, "#1fe06f"]];
+                      const share = (n) => `${(n / selected.totalShares * 100).toFixed(2)}%`;
+                      return (
+                        <div className="space-y-3">
+                          <div role="img" aria-label={parts.map(([l, n]) => `${l} ${n ?? 0}`).join(", ")} className="flex h-3 overflow-hidden rounded-full bg-[#3f4045]">
+                            {parts.map(([l, n, c]) => n > 0 && <div key={l} title={`${l}: ${n.toLocaleString()}`} style={{ width: `${(n / selected.totalShares) * 100}%`, background: c }} />)}
+                          </div>
+                          <ul className="grid sm:grid-cols-3 gap-3">
+                            {parts.map(([l, n, c]) => (
+                              <li key={l} className="rounded-xl bg-[#0e1426] px-4 py-3">
+                                <span className="flex items-center gap-2 text-xs text-[#98a2c3]"><span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: c }} />{l}</span>
+                                <span className="block mt-1 text-lg font-semibold text-white tabular-nums">{n == null ? "Unavailable" : n.toLocaleString()}</span>
+                                {n != null && <span className="text-xs text-[#98a2c3]">{share(n)} of the property</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })()}
+                  </Card>
+
+                  <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+                    <Stat label="Approved value" value={formatLKR(selected.valuationLKR)} />
+                    <Stat label="Price per token" value={selected.referencePriceLKR != null ? formatLKR(selected.referencePriceLKR) : "—"} note="Starting price" />
+                    <Stat label="Your tokens" value={selected.balance.toLocaleString()} note={`${selected.ownershipPercentage.toFixed(2)}% of the property`} />
+                    <Stat label="Worth about" tone="up" value={selected.indicativeHoldingVal != null ? formatLKR(selected.indicativeHoldingVal) : "—"} />
                   </div>
 
-                  {/* Real Balance & Valuation Breakdown */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs font-mono bg-zinc-950 p-4 rounded-2xl border border-zinc-850">
-                    <div>
-                      <span className="text-zinc-500 font-sans block text-[11px]">Real On-Chain Shares</span>
-                      <span className="text-white font-extrabold text-base">
-                        {h.balance.toLocaleString()}
-                      </span>
-                      <span className="text-[10px] text-zinc-500 font-sans block">/ {h.totalShares.toLocaleString()}</span>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500 font-sans block text-[11px]">Ownership Share</span>
-                      <span className="text-emerald-400 font-bold text-base">
-                        {h.ownershipPercentage}%
-                      </span>
-                      <span className="text-[10px] text-zinc-500 font-sans block">of property</span>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500 font-sans block text-[11px]">Indicative Value</span>
-                      <span className="text-indigo-400 font-extrabold text-base font-sans">
-                        {formatLKR(h.indicativeHoldingVal)}
-                      </span>
-                      <span className="text-[10px] text-zinc-500 font-sans block">@ {formatLKR(h.referencePriceLKR)}/sh</span>
-                    </div>
-                  </div>
-
-                  {/* Action Controls */}
-                  <div className="flex flex-col sm:flex-row items-center gap-2">
-                    {h.balance > 0 ? (
-                      <Link
-                        to="/marketplace"
-                        className="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-xs font-bold text-blue-400 border border-blue-500/30 transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <ShoppingBag className="w-3.5 h-3.5" />
-                        Trade / Sell
-                      </Link>
-                    ) : (
-                      <Link
-                        to={`/tokenization/preview/${h.assetId}`}
-                        className="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-xs font-bold text-white shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <Coins className="w-3.5 h-3.5" />
-                        Tokenize Asset
-                      </Link>
+                  <Card title="Recent sales of this property" subtitle="Completed trades from the blockchain.">
+                    {trades == null ? <Empty>Sales history could not be loaded.</Empty> : !f.myTrades.length ? <Empty>No tokens of this property have been traded from your wallet yet.</Empty> : (
+                      <div className="overflow-x-auto"><table className="w-full text-sm min-w-[480px]">
+                        <thead><tr className="text-left text-xs uppercase tracking-wider text-[#98a2c3]"><th className="py-2 pr-3">Date</th><th className="py-2 pr-3">Type</th><th className="py-2 pr-3 text-right">Tokens</th><th className="py-2 text-right">Amount</th></tr></thead>
+                        <tbody>{f.myTrades.slice(0, 6).map((t) => (
+                          <tr key={`${t.txHash}-${t.listingId}`} className="border-t border-[#1b2440]">
+                            <td className="py-2.5 pr-3 text-[#c3cae2]">{t.at.toLocaleDateString()}</td>
+                            <td className="py-2.5 pr-3" style={{ color: t.side === "Sold" ? "var(--up)" : "var(--ink-2)" }}>{t.side === "Sold" ? "▲ Sold" : "Bought"}</td>
+                            <td className="py-2.5 pr-3 text-right text-white tabular-nums">{t.amount.toLocaleString()}</td>
+                            <td className="py-2.5 text-right text-white tabular-nums">{formatMUSD(t.side === "Sold" ? t.received : t.total)}</td>
+                          </tr>))}</tbody>
+                      </table></div>
                     )}
-                    <Link
-                      to={`/tokenization/status/${h.assetId}`}
-                      className="w-full sm:w-auto py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-300 border border-zinc-700 transition-all text-center"
-                    >
-                      Audit Trail
-                    </Link>
+                  </Card>
+
+                  <div className="flex flex-wrap gap-2">
+                    {selected.balance > 0
+                      ? <ActionButton primary icon={ShoppingBag} to={`/owner/release?asset=${f.tokenId}`}>Put tokens on sale</ActionButton>
+                      : <ActionButton primary icon={Coins} to={`/tokenization/preview/${selected.assetId}`}>Create tokens</ActionButton>}
+                    <ActionButton icon={Receipt} to={`/tokenization/status/${selected.assetId}`}>Ownership record</ActionButton>
+                    <ActionButton icon={FileText} onClick={() => setTab("report")}>Make a report</ActionButton>
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+
+              {tab === "valuation" && (
+                <div className="space-y-5">
+                  <Card title="Official valuation" subtitle="The approved value sets the starting price of each token. You can ask for a review if you think it is out of date.">
+                    {f.tokenized
+                      ? <ValuationPanel assetId={f.tokenId} balance={selected.balance} allowReviewRequest title="Approved valuation & reference price" />
+                      : <Empty>Valuation tracking starts once the tokens are created. The approved value for now is <strong className="text-white">{formatLKR(selected.valuationLKR)}</strong>.</Empty>}
+                  </Card>
+                  <Card title="Valuation history" subtitle="Every approved value, newest first.">
+                    {det?.loading ? <Skeleton className="h-24 w-full" /> : !f.entries.length ? <Empty>No valuation history has been published for this property yet.</Empty> : (
+                      <ol className="divide-y divide-[#1b2440]">
+                        {[...f.entries].reverse().map((h) => (
+                          <li key={h.version} className="flex items-center justify-between gap-3 py-3">
+                            <span className="min-w-0"><span className="block font-semibold text-white tabular-nums">{formatLKR(h.approvedValue)}</span><span className="block text-xs text-[#98a2c3]">Version {h.version} · {h.effectiveDate ? fmtDate(h.effectiveDate) : "—"}{h.note ? ` · ${h.note}` : ""}</span></span>
+                            {h.changePercent != null && <span className="font-semibold tabular-nums" style={{ color: Number(h.changePercent) < 0 ? "var(--down)" : "var(--up)" }}>{Number(h.changePercent) < 0 ? "▼" : "▲"} {Number(h.changePercent) > 0 ? "+" : ""}{h.changePercent}%</span>}
+                          </li>))}
+                      </ol>
+                    )}
+                  </Card>
+                </div>
+              )}
+
+              {tab === "report" && (
+                <div className="space-y-4">
+                  <div className="no-print flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm text-[#98a2c3]">A one-page summary of this property: details, valuation, your holding, history and sales.</p>
+                    <div className="flex flex-wrap gap-2">
+                      <ActionButton primary icon={Printer} onClick={() => window.print()}>Print / save as PDF</ActionButton>
+                      <ActionButton icon={Download} onClick={exportAsset}>Download CSV</ActionButton>
+                    </div>
+                  </div>
+                  {det?.loading ? <Skeleton className="h-96 w-full rounded-2xl" /> : <AssetReport a={selected} f={f} owner={user?.name} wallet={wallet} currency={currency} />}
+                </div>
+              )}
+
+              {tab === "certificate" && (
+                f.tokenized && f.record?.mintingTxHash ? (
+                  <div className="space-y-4">
+                    <div className="no-print flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-sm text-[#98a2c3]">Proof that these tokens were created for this property. Print it or save it as a PDF.</p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <CopyButton text={`TC-${f.record.mintingTxHash.slice(2, 10).toUpperCase()}`} label="Copy certificate no." />
+                        <ActionButton primary icon={Printer} onClick={() => window.print()}>Print / save as PDF</ActionButton>
+                      </div>
+                    </div>
+                    <Certificate a={selected} f={f} wallet={wallet} formatLKR={formatLKR} />
+                  </div>
+                ) : det?.loading ? <Skeleton className="h-96 w-full rounded-2xl" /> : (
+                  <Card title="No certificate yet" subtitle="A certificate is issued once the tokens for this property have been created and recorded.">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <ShieldCheck className="w-5 h-5 text-[#98a2c3]" />
+                      <span className="text-sm text-[#98a2c3]">{f.tokenized ? "The tokens exist, but the creation receipt could not be found. Try Refresh." : "This property has not been tokenized."}</span>
+                      {!f.tokenized && <ActionButton primary icon={Coins} to={`/tokenization/preview/${selected.assetId}`}>Create tokens</ActionButton>}
+                    </div>
+                  </Card>
+                )
+              )}
+            </>
           )}
         </div>
-      </main>
+      </div>
 
-      {/* Add Wallet Modal */}
-      <AddWalletModal
-        isOpen={showAddWalletModal}
-        onClose={() => setShowAddWalletModal(false)}
-        onSuccess={() => detectMetaMaskAccount()}
-      />
+      <AddWalletModal isOpen={showAddWallet} onClose={() => setShowAddWallet(false)} onSuccess={load} />
     </div>
   );
 }

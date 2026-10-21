@@ -1,11 +1,15 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { kycSteps } from "../../lib/ownerData";
 import { useAuth } from "../../context/AuthContext";
 import { useCurrency } from "../../context/CurrencyContext";
+import { useRole } from "../../context/RoleContext";
 import { kycAPI } from "../../lib/api";
 import { resolveUserWallet } from "../../lib/walletResolver";
+import { isAssetOwnedByUser } from "../../lib/assetOwnership";
 import Navbar from "../../components/Navbar";
 import AddWalletModal from "../../components/AddWalletModal";
+import IdMethodPicker, { idMethod } from "../../components/IdMethodPicker";
 import {
   Building,
   PlusCircle,
@@ -31,13 +35,25 @@ import {
   RefreshCw
 } from "lucide-react";
 
-export default function AssetOwnerDashboard() {
+// Inside the owner workspace this page serves several sidebar entries:
+//   view="assets" (My Assets), view="assets" + openNew (Submit Asset),
+//   view="kyc" (Complete KYC), view="kycStatus" (KYC Status).
+export default function AssetOwnerDashboard({ view = "assets", openNew = false }) {
+  const [searchParams] = useSearchParams();
+  const searchQuery = (searchParams.get("q") || "").trim().toLowerCase();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { currency, formatLKR, formatMUSD } = useCurrency();
+  const { currency, currencyInfo, convert, formatLKR, formatMUSD } = useCurrency();
+  const { isInvestor } = useRole();
+
+  useEffect(() => {
+    if (user?.role === "investor") {
+      navigate("/dashboard/investor", { replace: true });
+    }
+  }, [user, navigate]);
 
   // Navigation & Tabs: Default to 'assets' so the user immediately sees asset management
-  const [activeTab, setActiveTab] = useState("assets");
+  const activeTab = view === "assets" ? "assets" : "kyc";
 
   // KYC States
   const [kycStatus, setKycStatus] = useState(null);
@@ -45,11 +61,20 @@ export default function AssetOwnerDashboard() {
   const [uploading, setUploading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [idNumber, setIdNumber] = useState("");
+  const [idType, setIdType] = useState("national_id");
 
   // Asset Management States
-  const [assets, setAssets] = useState([]);
+  const [loadedAssets, setAssets] = useState([]);
+  const ownerWallet = resolveUserWallet(user);
+  const assets = loadedAssets.filter(asset => isAssetOwnedByUser(asset, user));
   const [assetLoading, setAssetLoading] = useState(false);
-  const [showAddAssetModal, setShowAddAssetModal] = useState(false);
+  const [showAddAssetModal, setShowAddAssetModalState] = useState(openNew);
+  useEffect(() => { setShowAddAssetModalState(openNew); }, [openNew]);
+  // Closing the form opened from "Submit Asset" returns to My Assets.
+  const setShowAddAssetModal = (open) => {
+    setShowAddAssetModalState(open);
+    if (!open && openNew) navigate("/owner/assets");
+  };
   const [expandedAssetId, setExpandedAssetId] = useState(null);
   const [verifyingAssetId, setVerifyingAssetId] = useState(null);
   const [assetUploading, setAssetUploading] = useState(false);
@@ -72,10 +97,25 @@ export default function AssetOwnerDashboard() {
     valuation: "",
     currency: "LKR",
     totalShares: 1000,
-    expectedYield: "8.5",
-    location: "Colombo, Sri Lanka",
+    location: "",
     description: ""
   });
+
+  // The property value is typed in the selected currency. When the currency changes,
+  // convert what is already typed so the number keeps meaning the same amount.
+  const prevCurrency = useRef(currency);
+  useEffect(() => {
+    const prev = prevCurrency.current;
+    if (prev === currency) return;
+    prevCurrency.current = currency;
+    setAssetUploadData((d) => {
+      const n = Number(d.valuation);
+      if (!(n > 0)) return d;
+      const converted = convert(n, prev, currency);
+      return { ...d, valuation: String(Number(converted.toFixed(currencyInfo.decimals ?? 2))) };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency]);
 
   const [assetFiles, setAssetFiles] = useState({
     deed: null,
@@ -85,110 +125,6 @@ export default function AssetOwnerDashboard() {
     certificates: null
   });
 
-  // Seed demonstration assets fallback
-  const demoSeedAssets = [
-    {
-      assetId: 1,
-      assetName: "Colombo Oceanfront Residence",
-      symbol: "COR-01",
-      assetType: "real_estate",
-      valuation: 10000000,
-      valuationLKR: 10000000,
-      currency: "LKR",
-      totalShares: 1000,
-      verificationStatus: "approved",
-      status: "Approved",
-      tokenized: true,
-      blockchainTokenId: 1,
-      issuerWallet: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-      riskScore: 12,
-      documentAuthentic: true,
-      ownershipVerified: true,
-      documentHash: "0x9f83c6138438914b1bf0597bc5f8f5339f40feef2c95e5d326f9661d9a5b6d92",
-      metadataURI: "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/colombo.json"
-    },
-    {
-      assetId: 2,
-      assetName: "Kandy Royal Commercial Plaza",
-      symbol: "KRP-02",
-      assetType: "real_estate",
-      valuation: 50000000,
-      valuationLKR: 50000000,
-      currency: "LKR",
-      totalShares: 5000,
-      verificationStatus: "approved",
-      status: "Approved",
-      tokenized: false,
-      blockchainTokenId: null,
-      issuerWallet: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-      riskScore: 28,
-      documentAuthentic: true,
-      ownershipVerified: true,
-      documentHash: "0x7c2d5e3f4b6a9c1e2d3b4a5c6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
-      metadataURI: "ipfs://bafybeihkoviema7g3gx4e2lrtqfop4x42m66x4o2j2v65p3zldu54nhe2y/kandy.json"
-    },
-    {
-      assetId: 3,
-      assetName: "Galle Dutch Fort Heritage Villa",
-      symbol: "GFV-03",
-      assetType: "real_estate",
-      valuation: 25000000,
-      valuationLKR: 25000000,
-      currency: "LKR",
-      totalShares: 2500,
-      verificationStatus: "approved",
-      status: "Approved",
-      tokenized: false,
-      blockchainTokenId: null,
-      issuerWallet: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-      riskScore: 35,
-      documentAuthentic: true,
-      ownershipVerified: true,
-      documentHash: "0x4a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
-      metadataURI: "ipfs://bafybeicg4f3qpm5u3vx6z7h4h7q2x6o2q4f5o6z7a8b9c0d1e2f3a4b5c6/galle.json"
-    },
-    {
-      assetId: 4,
-      assetName: "Nuwara Eliya High-Grown Tea Estate",
-      symbol: "NTE-04",
-      assetType: "real_estate",
-      valuation: 40000000,
-      valuationLKR: 40000000,
-      currency: "LKR",
-      totalShares: 4000,
-      verificationStatus: "pending",
-      status: "Pending",
-      tokenized: false,
-      blockchainTokenId: null,
-      issuerWallet: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-      riskScore: 24,
-      documentAuthentic: true,
-      ownershipVerified: false,
-      documentHash: "0x5b2c8e1a9f3d4c7b2a1e0f8d7c6b5a4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a",
-      metadataURI: "ipfs://bafybeiteaestate7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/tea.json"
-    },
-    {
-      assetId: 5,
-      assetName: "Mirissa Beachfront Boutique Resort",
-      symbol: "MBR-05",
-      assetType: "real_estate",
-      valuation: 60000000,
-      valuationLKR: 60000000,
-      currency: "LKR",
-      totalShares: 6000,
-      verificationStatus: "pending",
-      status: "Pending",
-      tokenized: false,
-      blockchainTokenId: null,
-      issuerWallet: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-      riskScore: 30,
-      documentAuthentic: true,
-      ownershipVerified: false,
-      documentHash: "0x6c3d9f2b0a4e5d8c3b2f1a9e8d7c6b5a4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b",
-      metadataURI: "ipfs://bafybeiboutiqueresort9f83c6138438914b1bf0597bc5f8f5339f40fe/resort.json"
-    }
-  ];
-
   const handleCopyHash = (hash) => {
     if (!hash) return;
     navigator.clipboard.writeText(hash);
@@ -197,8 +133,7 @@ export default function AssetOwnerDashboard() {
   };
 
   const fetchAssets = async (walletAddress = selectedOwnerWallet) => {
-    const target = walletAddress || selectedOwnerWallet;
-    if (!target) {
+    if (!user?.token) {
       setAssets([]);
       setAssetLoading(false);
       return;
@@ -207,7 +142,9 @@ export default function AssetOwnerDashboard() {
     setAssetLoading(true);
     try {
       // Fetch real registered assets from backend database API filtered by owner
-      const res = await fetch(`http://localhost:5001/api/assets?owner=${target}`);
+      const res = await fetch("http://localhost:5001/api/assets/owned", {
+        headers: { Authorization: `Bearer ${user.token}` },
+      });
       const data = await res.json();
       if (data.success && data.data) {
         setAssets(data.data);
@@ -223,23 +160,12 @@ export default function AssetOwnerDashboard() {
   };
 
   const detectWallet = async (explicitAddress = null) => {
-    let active = explicitAddress;
-    if (!active) {
-      if (window.ethereum) {
-        try {
-          const accs = await window.ethereum.request({ method: "eth_accounts" });
-          if (accs && accs.length > 0) active = accs[0];
-        } catch (e) {}
-      }
-      if (!active) {
-        active = user?.walletAddress || resolveUserWallet(user) || "";
-      }
-    }
+    const active = resolveUserWallet(user);
 
     if (active) {
       setAccount(active);
-      setSelectedOwnerWallet(active);
-      fetchAssets(active);
+      setSelectedOwnerWallet(resolveUserWallet(user) || "");
+      fetchAssets();
     } else {
       setAccount("");
       setSelectedOwnerWallet("");
@@ -272,6 +198,7 @@ export default function AssetOwnerDashboard() {
     if (kycStatus?.idNumber) {
       setIdNumber(kycStatus.idNumber);
     }
+    if (kycStatus?.idType) setIdType(kycStatus.idType);
   }, [kycStatus]);
 
   const fetchKYCStatus = async () => {
@@ -294,6 +221,10 @@ export default function AssetOwnerDashboard() {
       setError("Asset name is required");
       return;
     }
+    if (!assetUploadData.location.trim()) {
+      setError("Please enter the property location");
+      return;
+    }
     if (!assetUploadData.valuation || Number(assetUploadData.valuation) <= 0) {
       setError("Please enter a valid asset valuation");
       return;
@@ -306,13 +237,13 @@ export default function AssetOwnerDashboard() {
     const formData = new FormData();
     formData.append("assetName", assetUploadData.assetName);
     formData.append("assetType", assetUploadData.assetType);
-    formData.append("valuation", assetUploadData.valuation);
+    // The backend stores values in LKR, so convert what was typed in the selected currency.
+    formData.append("valuation", String(Math.round(convert(Number(assetUploadData.valuation), currency, "LKR"))));
     formData.append("currency", assetUploadData.currency);
 
     // Optional fields
-    formData.append("symbol", assetUploadData.symbol || "RWA-01");
+    if (assetUploadData.symbol.trim()) formData.append("symbol", assetUploadData.symbol.trim());
     formData.append("totalShares", assetUploadData.totalShares);
-    formData.append("expectedYield", assetUploadData.expectedYield);
     formData.append("location", assetUploadData.location);
     formData.append("description", assetUploadData.description);
     formData.append("issuerWallet", selectedOwnerWallet);
@@ -335,8 +266,7 @@ export default function AssetOwnerDashboard() {
         valuation: "",
         currency: "LKR",
         totalShares: 1000,
-        expectedYield: "8.5",
-        location: "Colombo, Sri Lanka",
+        location: "",
         description: ""
       });
       setAssetFiles({
@@ -350,32 +280,7 @@ export default function AssetOwnerDashboard() {
       setShowAddAssetModal(false);
       await fetchAssets(selectedOwnerWallet);
     } catch (err) {
-      console.warn("Upload error, adding to local dashboard session:", err.message);
-      // Create local entry so asset owner immediately sees their new asset
-      const newAsset = {
-        assetId: Date.now(),
-        assetName: assetUploadData.assetName,
-        symbol: assetUploadData.symbol || "RWA-" + Math.floor(Math.random() * 100),
-        assetType: assetUploadData.assetType,
-        valuation: Number(assetUploadData.valuation),
-        valuationLKR: Number(assetUploadData.valuation),
-        currency: assetUploadData.currency,
-        totalShares: Number(assetUploadData.totalShares),
-        verificationStatus: "pending",
-        status: "Pending",
-        tokenized: false,
-        blockchainTokenId: null,
-        issuerWallet: selectedOwnerWallet,
-        riskScore: 20,
-        documentAuthentic: true,
-        ownershipVerified: false,
-        documentHash: "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(""),
-        metadataURI: "ipfs://bafybeiuploadednewasset" + Date.now()
-      };
-
-      setAssets((prev) => [newAsset, ...prev]);
-      setSuccessMsg(`Asset "${assetUploadData.assetName}" successfully onboarded for legal verification!`);
-      setShowAddAssetModal(false);
+      setError(err.response?.data?.message || err.message || "Asset upload failed. Please try again.");
     } finally {
       setAssetUploading(false);
     }
@@ -397,7 +302,7 @@ export default function AssetOwnerDashboard() {
 
     const formData = new FormData();
     formData.append("document", file);
-    formData.append("idType", "national_id");
+    formData.append("idType", idType);
     formData.append("idNumber", idNumber);
 
     try {
@@ -472,6 +377,7 @@ export default function AssetOwnerDashboard() {
   const pendingAssets = assets.filter(isAssetPending);
 
   const displayedAssets = assets.filter((a) => {
+    if (searchQuery && ![a.name, a.assetName, a.symbol, a.location].some((v) => String(v || "").toLowerCase().includes(searchQuery))) return false;
     if (assetStatusFilter === "verified") return isAssetVerified(a);
     if (assetStatusFilter === "pending") return isAssetPending(a);
     return true;
@@ -494,38 +400,28 @@ export default function AssetOwnerDashboard() {
       <Navbar />
 
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
-        {/* Hero Header */}
+        {/* Page header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                <Building className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-black tracking-tight text-white">
-                  Asset Owner Portal
-                </h1>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Logged in as <strong className="text-zinc-200">{user?.name || "Asset Issuer"}</strong> ({user?.email})
-                </p>
-              </div>
-            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-white">
+              {{ assets: "My Assets", kyc: "Complete KYC", kycStatus: "KYC Status" }[view]}
+            </h1>
+            <p className="text-sm text-zinc-400 mt-1">
+              {{
+                assets: "Every property you have submitted, its verification status and next step.",
+                kyc: "Upload your identity document and a selfie, then run the automated check.",
+                kycStatus: "Results of your identity verification.",
+              }[view]}
+            </p>
           </div>
-
-          {/* Direct "Add Asset" Action Button */}
-          <div className="flex items-center gap-3">
+          {view === "assets" && !isInvestor && (
             <button
-              onClick={() => {
-                setError("");
-                setSuccessMsg("");
-                setShowAddAssetModal(true);
-              }}
-              className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-500 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm rounded-xl shadow-xl shadow-blue-500/25 transition-all cursor-pointer transform hover:-translate-y-0.5"
+              onClick={() => { setError(""); setSuccessMsg(""); setShowAddAssetModal(true); }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm rounded-xl"
             >
-              <PlusCircle className="w-5 h-5" />
-              + Add / Register New Asset
+              <PlusCircle className="w-5 h-5" /> Submit asset
             </button>
-          </div>
+          )}
         </div>
 
         {/* Connected Owner Wallet Banner */}
@@ -617,7 +513,7 @@ export default function AssetOwnerDashboard() {
         )}
 
         {/* Portfolio Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+        {view === "assets" && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-lg">
             <div className="flex items-center justify-between text-zinc-400 mb-2 text-xs font-semibold uppercase tracking-wider">
               <span>Total Owned Assets</span>
@@ -669,34 +565,7 @@ export default function AssetOwnerDashboard() {
               {currency !== "LKR" ? `≈ LKR ${(totalValuationLKR / 1000000).toFixed(1)}M appraisal` : "Total real estate appraisal"}
             </div>
           </div>
-        </div>
-
-        {/* Main Tab Navigation */}
-        <div className="border-b border-zinc-800 mb-8 flex space-x-8">
-          <button
-            onClick={() => setActiveTab("assets")}
-            className={`pb-4 font-bold text-sm flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === "assets"
-                ? "border-b-2 border-blue-500 text-blue-400"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            <Building className="w-4 h-4" />
-            My Owned Assets ({assets.length})
-          </button>
-
-          <button
-            onClick={() => setActiveTab("kyc")}
-            className={`pb-4 font-bold text-sm flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === "kyc"
-                ? "border-b-2 border-blue-500 text-blue-400"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            Owner KYC & Compliance
-          </button>
-        </div>
+        </div>}
 
         {/* TAB 1: ASSET MANAGEMENT */}
         {activeTab === "assets" && (
@@ -713,13 +582,15 @@ export default function AssetOwnerDashboard() {
                 </p>
               </div>
 
-              <button
-                onClick={() => setShowAddAssetModal(true)}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-blue-500/20 shrink-0 transition-all cursor-pointer flex items-center gap-2"
-              >
-                <PlusCircle className="w-4 h-4" />
-                Add Asset Now
-              </button>
+              {!isInvestor && (
+                <button
+                  onClick={() => setShowAddAssetModal(true)}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-blue-500/20 shrink-0 transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  Add Asset Now
+                </button>
+              )}
             </div>
 
             {/* Sub-Filter Tabs: All vs Verified vs Pending */}
@@ -766,6 +637,9 @@ export default function AssetOwnerDashboard() {
               </div>
             </div>
 
+            {searchQuery && (
+              <p className="text-sm text-zinc-400">Showing assets matching “{searchParams.get("q")}”. <Link to="/owner/assets" className="text-blue-300">Clear search</Link></p>
+            )}
             {/* Assets Grid */}
             {assetLoading ? (
               <div className="py-20 text-center text-zinc-500">
@@ -789,12 +663,14 @@ export default function AssetOwnerDashboard() {
                     ? "All registered properties have completed legal verification."
                     : "Begin by registering your first real-world property deed for fractional tokenization."}
                 </p>
-                <button
-                  onClick={() => setShowAddAssetModal(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-medium cursor-pointer"
-                >
-                  Register New Asset
-                </button>
+                {!isInvestor && (
+                  <button
+                    onClick={() => setShowAddAssetModal(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-medium cursor-pointer"
+                  >
+                    Register New Asset
+                  </button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -803,8 +679,8 @@ export default function AssetOwnerDashboard() {
                   const isApproved = isAssetVerified(asset);
                   const isPending = isAssetPending(asset);
                   const isExpanded = expandedAssetId === asset.assetId;
-                  const totalShares = asset.totalShares || 1000;
-                  const valuation = Number(asset.valuationLKR || asset.valuation) || 10000000;
+                  const totalShares = Number(asset.totalShares) || 0;
+                  const valuation = Number(asset.valuationLKR ?? asset.valuation) || 0;
                   const referencePrice = totalShares > 0 ? valuation / totalShares : 0;
 
                   return (
@@ -822,7 +698,7 @@ export default function AssetOwnerDashboard() {
                         {/* Status Badges */}
                         <div className="flex items-center justify-between mb-3">
                           <span className="px-2.5 py-1 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-400">
-                            {asset.symbol || `RWA-0${asset.assetId}`}
+                            {asset.symbol || `Asset #${asset.assetId}`}
                           </span>
                           <span
                             className={`px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
@@ -836,7 +712,7 @@ export default function AssetOwnerDashboard() {
                             {isTokenized ? (
                               <>
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>TOKENIZED (ID #{asset.blockchainTokenId || asset.assetId})</span>
+                                <span>TOKENIZED{asset.blockchainAssetId != null ? ` (TOKEN #${asset.blockchainAssetId})` : ""}</span>
                               </>
                             ) : isApproved ? (
                               <>
@@ -855,7 +731,7 @@ export default function AssetOwnerDashboard() {
                         {/* Title & Valuation */}
                         <h3 className="text-lg font-bold text-white mb-1">{asset.name || asset.assetName}</h3>
                         <p className="text-xs text-zinc-400 mb-3 capitalize">
-                          {asset.propertyType || asset.assetType?.replace("_", " ") || "Real Estate"} • {asset.location || "Sri Lanka"}
+                          {[(asset.propertyType || asset.assetType || "").replace("_", " "), asset.location].filter(Boolean).join(" • ") || "Location not provided"}
                         </p>
 
                         {/* Distinct Pending Verification Notice */}
@@ -875,7 +751,7 @@ export default function AssetOwnerDashboard() {
                                 className="text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer font-mono"
                                 title="Copy Document Hash"
                               >
-                                <span>{(asset.documentHash || "0x5b2c...").slice(0, 10)}...{(asset.documentHash || "0x5b2c...").slice(-6)}</span>
+                                <span>{asset.documentHash ? `${asset.documentHash.slice(0, 10)}...${asset.documentHash.slice(-6)}` : "Not recorded"}</span>
                                 {copiedHash === asset.documentHash ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                               </button>
                             </div>
@@ -938,7 +814,15 @@ export default function AssetOwnerDashboard() {
                             </div>
                           )}
 
-                          {isApproved && !isTokenized && (
+                          {isTokenized && !isInvestor && (
+                            <Link
+                              to={`/marketplace?sellAsset=${asset.assetId}`}
+                              className="flex-1 min-w-[180px] py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold text-center"
+                            >
+                              List Tokens for Sale
+                            </Link>
+                          )}
+                          {isApproved && !isTokenized && !isInvestor && (
                             <button
                               onClick={() => navigate(`/tokenization/preview/${asset.assetId}`)}
                               className="flex-1 min-w-[170px] py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition-all cursor-pointer flex items-center justify-center gap-1.5"
@@ -973,7 +857,7 @@ export default function AssetOwnerDashboard() {
                             <div>
                               <span className="text-zinc-500 block">Deed Document Hash:</span>
                               <div className="flex items-center justify-between text-zinc-300 break-all text-[11px]">
-                                <span>{asset.documentHash || "0x9f83c6138438914b1bf0597bc5f8f5339f40feef2c95e5d326f9661d9a5b6d92"}</span>
+                                <span>{asset.documentHash || "Not recorded"}</span>
                                 <button
                                   onClick={() => handleCopyHash(asset.documentHash)}
                                   className="ml-2 text-zinc-400 hover:text-white shrink-0"
@@ -986,7 +870,7 @@ export default function AssetOwnerDashboard() {
                             <div>
                               <span className="text-zinc-500 block">Metadata URI:</span>
                               <span className="text-blue-400 break-all text-[11px]">
-                                {asset.metadataURI || "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}
+                                {asset.metadataURI || "Not recorded"}
                               </span>
                             </div>
                             <div className="flex justify-between pt-1">
@@ -1019,44 +903,66 @@ export default function AssetOwnerDashboard() {
               {kycStatus ? (
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between py-2 border-b border-zinc-800">
-                    <span className="text-zinc-400">Verification Status:</span>
-                    <span className="font-bold text-emerald-400 uppercase">
-                      {kycStatus.verificationStatus || "APPROVED"}
+                    <span className="text-zinc-400">Verification status:</span>
+                    <span className={`font-bold uppercase ${kycStatus.verificationStatus === "approved" ? "text-emerald-400" : kycStatus.verificationStatus === "rejected" ? "text-rose-400" : "text-amber-400"}`}>
+                      {(kycStatus.verificationStatus || "pending").replace("_", " ")}
                     </span>
                   </div>
                   <div className="flex justify-between py-2 border-b border-zinc-800">
-                    <span className="text-zinc-400">Biometric Match:</span>
-                    <span className="font-semibold text-white">{kycStatus.faceScore || 96}% Confidence</span>
+                    <span className="text-zinc-400">Face match:</span>
+                    <span className="font-semibold text-white">{kycSteps(kycStatus)[2].done ? `${kycStatus.faceScore}% confidence` : "Not checked yet"}</span>
                   </div>
                   <div className="flex justify-between py-2 border-b border-zinc-800">
-                    <span className="text-zinc-400">Risk Assessment:</span>
-                    <span className="font-semibold text-emerald-400">{kycStatus.riskScore || 8}/100 (Clean)</span>
+                    <span className="text-zinc-400">Risk score:</span>
+                    <span className="font-semibold text-white">{kycSteps(kycStatus)[2].done ? `${kycStatus.riskScore}/100` : "Not checked yet"}</span>
                   </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-zinc-400">Deed Issuance Clearance:</span>
-                    <span className="font-semibold text-emerald-400">✓ Fully Cleared</span>
+                  <div className="flex justify-between py-2 border-b border-zinc-800">
+                    <span className="text-zinc-400">Document authenticity:</span>
+                    <span className={`font-semibold ${kycStatus.documentAuthentic ? "text-emerald-400" : "text-zinc-300"}`}>
+                      {kycStatus.documentAuthentic ? "✓ Authentic" : kycSteps(kycStatus)[2].done ? "Not confirmed" : "Not checked yet"}
+                    </span>
                   </div>
+                  {kycStatus.verifiedAt && (
+                    <div className="flex justify-between py-2 border-b border-zinc-800">
+                      <span className="text-zinc-400">Verified on:</span>
+                      <span className="font-semibold text-white">{new Date(kycStatus.verifiedAt).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {kycStatus.rejectionReason && <p className="text-rose-300 text-xs">Reason: {kycStatus.rejectionReason}</p>}
+                  <ul className="pt-2 space-y-1.5">
+                    {kycSteps(kycStatus).map((st) => (
+                      <li key={st.key} className={`flex items-center gap-2 text-xs ${st.done ? "text-emerald-300" : "text-zinc-500"}`}>
+                        {st.done ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />} {st.label}
+                      </li>
+                    ))}
+                  </ul>
+                  {view === "kycStatus" && kycStatus.verificationStatus !== "approved" && (
+                    <Link to="/owner/kyc" className="inline-block mt-2 text-sm text-blue-300">Continue verification →</Link>
+                  )}
                 </div>
               ) : (
-                <p className="text-xs text-zinc-400">
-                  Please submit your government identity document and owner biometric selfie below.
+                <p className="text-sm text-zinc-400">
+                  You have not started identity verification yet.{" "}
+                  {view === "kycStatus" && <Link to="/owner/kyc" className="text-blue-300">Start now →</Link>}
                 </p>
               )}
             </div>
 
             {/* Document Uploads */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl space-y-4">
+            {view !== "kycStatus" && <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl space-y-4">
               <h2 className="text-lg font-bold text-white mb-2">Owner Identity Credentials</h2>
+
+              <IdMethodPicker value={idType} onChange={setIdType} disabled={uploading} />
 
               <div>
                 <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                  National ID / Passport Number
+                  {idMethod(idType)[2]}
                 </label>
                 <input
                   type="text"
                   value={idNumber}
                   onChange={(e) => setIdNumber(e.target.value)}
-                  placeholder="Enter NIC or Passport number"
+                  placeholder={`Enter your ${idMethod(idType)[2].toLowerCase()}`}
                   className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none"
                 />
               </div>
@@ -1092,171 +998,132 @@ export default function AssetOwnerDashboard() {
               >
                 {verifying ? "Processing AI OCR & Biometrics..." : "Run AI KYC Verification"}
               </button>
-            </div>
+            </div>}
           </div>
         )}
 
-        {/* MODAL: ADD / REGISTER NEW REAL-WORLD ASSET */}
-        {showAddAssetModal && (
-          <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
-              <button
-                onClick={() => setShowAddAssetModal(false)}
-                className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        {/* MODAL: SUBMIT A PROPERTY FOR VERIFICATION */}
+        {showAddAssetModal && (() => {
+          const val = convert(Number(assetUploadData.valuation), currency, "LKR"); // always LKR for the preview
+          const shares = Number(assetUploadData.totalShares);
+          const ready = val > 0 && shares > 0;
+          const field = "w-full px-3.5 py-2.5 rounded-xl border border-[#1b2440] bg-[#0e1426] text-sm text-white placeholder:text-[#6b7599] focus:outline-none focus:border-indigo-500";
+          const label = "block text-sm font-medium text-[#c3cae2] mb-1.5";
+          const hint = "text-xs text-[#98a2c3] mt-1.5";
+          const fileBox = (name, title, note) => (
+            <label className={`flex items-center gap-3 rounded-xl border border-dashed p-3.5 cursor-pointer ${assetFiles[name] ? "border-emerald-500/50 bg-emerald-500/5" : "border-[#29345a] bg-[#0e1426] hover:border-indigo-500/60"}`}>
+              <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${assetFiles[name] ? "bg-emerald-500/15 text-emerald-300" : "bg-indigo-500/10 text-indigo-300"}`}>
+                {assetFiles[name] ? <CheckCircle2 className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-white">{title}</span>
+                <span className="block text-xs text-[#98a2c3] truncate">{assetFiles[name] ? assetFiles[name].name : note}</span>
+              </span>
+              <input type="file" accept="image/*,.pdf" className="sr-only" onChange={(e) => setAssetFiles({ ...assetFiles, [name]: e.target.files?.[0] })} />
+            </label>
+          );
+          return (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4" role="dialog" aria-modal="true" aria-label="Submit a property">
+              <div className="bg-[#0b1124] border border-[#1b2440] rounded-2xl w-full max-w-2xl shadow-2xl relative max-h-[92vh] flex flex-col overflow-hidden">
+                <div className="flex items-start justify-between gap-4 p-5 sm:p-6 border-b border-[#1b2440]">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-300 flex items-center justify-center shrink-0"><Building className="w-5 h-5" /></span>
+                    <div className="min-w-0">
+                      <h2 className="text-xl font-bold text-white">Submit a property</h2>
+                      <p className="text-sm text-[#98a2c3]">Tell us about the land or building. The compliance team checks your documents before it can be tokenized.</p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setShowAddAssetModal(false)} aria-label="Close" className="p-2 rounded-lg text-[#98a2c3] hover:text-white hover:bg-[#141c33] shrink-0"><X className="w-5 h-5" /></button>
+                </div>
 
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
-                  <Building className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-white">Register Real-World Asset</h2>
-                  <p className="text-xs text-zinc-400">Onboard verified real estate for fractional blockchain tokenization</p>
-                </div>
+                <form onSubmit={handleAssetUpload} className="flex flex-col min-h-0">
+                  <div className="overflow-y-auto p-5 sm:p-6 space-y-7">
+                    {error && <p role="alert" className="flex items-start gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />{error}</p>}
+
+                    <section className="space-y-4">
+                      <h3 className="flex items-center gap-2.5 font-semibold text-white"><span className="w-6 h-6 rounded-full bg-indigo-500/15 text-indigo-300 text-xs font-bold flex items-center justify-center">1</span>About the property</h3>
+                      <div>
+                        <label className={label} htmlFor="asset-name">Property name <span className="text-rose-300">*</span></label>
+                        <input id="asset-name" type="text" value={assetUploadData.assetName} onChange={(e) => setAssetUploadData({ ...assetUploadData, assetName: e.target.value })} placeholder="e.g. Kegalle hillside land" className={field} required />
+                      </div>
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className={label} htmlFor="asset-type">Type</label>
+                          <select id="asset-type" value={assetUploadData.assetType} onChange={(e) => setAssetUploadData({ ...assetUploadData, assetType: e.target.value })} className={field}>
+                            <option value="real_estate">Residential real estate</option>
+                            <option value="commercial">Commercial plaza</option>
+                            <option value="villa">Boutique heritage villa</option>
+                            <option value="land">Development land</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className={label} htmlFor="asset-location">Location <span className="text-rose-300">*</span></label>
+                          <input id="asset-location" type="text" value={assetUploadData.location} onChange={(e) => setAssetUploadData({ ...assetUploadData, location: e.target.value })} placeholder="e.g. Kegalle, Sabaragamuwa" className={field} required />
+                        </div>
+                      </div>
+                      <div>
+                        <label className={label} htmlFor="asset-desc">Short description <span className="text-[#98a2c3] font-normal">(optional)</span></label>
+                        <input id="asset-desc" type="text" value={assetUploadData.description} onChange={(e) => setAssetUploadData({ ...assetUploadData, description: e.target.value })} placeholder="Land size, building, road access…" className={field} />
+                      </div>
+                    </section>
+
+                    <section className="space-y-4">
+                      <h3 className="flex items-center gap-2.5 font-semibold text-white"><span className="w-6 h-6 rounded-full bg-indigo-500/15 text-indigo-300 text-xs font-bold flex items-center justify-center">2</span>Value and tokens</h3>
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className={label} htmlFor="asset-val">Property value ({currency}) <span className="text-rose-300">*</span></label>
+                          <input id="asset-val" type="number" min="0" step="any" value={assetUploadData.valuation} onChange={(e) => setAssetUploadData({ ...assetUploadData, valuation: e.target.value })} placeholder={`e.g. ${Math.round(convert(10000000, "LKR", currency)).toLocaleString()}`} className={field} required />
+                          <p className={hint}>The appraised value from your valuation report.</p>
+                        </div>
+                        <div>
+                          <label className={label} htmlFor="asset-shares">Number of tokens <span className="text-rose-300">*</span></label>
+                          <input id="asset-shares" type="number" min="1" value={assetUploadData.totalShares} onChange={(e) => setAssetUploadData({ ...assetUploadData, totalShares: e.target.value })} placeholder="e.g. 1000" className={field} required />
+                          <p className={hint}>The property is split into this many equal shares.</p>
+                        </div>
+                      </div>
+                      <div>
+                        <label className={label} htmlFor="asset-symbol">Short code <span className="text-[#98a2c3] font-normal">(optional)</span></label>
+                        <input id="asset-symbol" type="text" value={assetUploadData.symbol} onChange={(e) => setAssetUploadData({ ...assetUploadData, symbol: e.target.value })} placeholder="e.g. KEG-01" className={`${field} sm:max-w-xs`} />
+                      </div>
+                      <div className="rounded-xl border border-[#1b2440] bg-[#0e1426] p-4" aria-live="polite">
+                        {ready ? (
+                          <p className="text-sm text-[#c3cae2]">
+                            Each token will start at <strong className="text-white">{formatLKR(val / shares)}</strong>, and <strong className="text-white">1 token = {(100 / shares).toFixed(shares > 1000 ? 4 : 2)}%</strong> of the property.
+                          </p>
+                        ) : <p className="text-sm text-[#98a2c3]">Enter the value and number of tokens to see the price of one token.</p>}
+                      </div>
+                    </section>
+
+                    <section className="space-y-3">
+                      <h3 className="flex items-center gap-2.5 font-semibold text-white"><span className="w-6 h-6 rounded-full bg-indigo-500/15 text-indigo-300 text-xs font-bold flex items-center justify-center">3</span>Documents</h3>
+                      <p className="text-sm text-[#98a2c3]">PDF or photo. These are used to prove you own the property.</p>
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        {fileBox("deed", "Title deed", "Choose a file")}
+                        {fileBox("surveyPlan", "Survey plan", "Choose a file")}
+                      </div>
+                    </section>
+
+                    <section className="rounded-xl border border-[#1b2440] bg-[#0e1426] p-4">
+                      <h3 className="flex items-center gap-2 text-sm font-semibold text-white mb-2"><Clock className="w-4 h-4 text-indigo-300" />What happens next</h3>
+                      <ol className="space-y-1.5 text-sm text-[#98a2c3] list-decimal pl-5">
+                        <li>Your deed is read automatically and a fingerprint of it is saved.</li>
+                        <li>A compliance officer checks the land registry and approves it.</li>
+                        <li>You create {ready ? shares.toLocaleString() : "your"} tokens in your wallet and can put them on sale.</li>
+                      </ol>
+                    </section>
+                  </div>
+
+                  <div className="flex flex-col-reverse sm:flex-row gap-3 p-5 sm:px-6 border-t border-[#1b2440] bg-[#0b1124]">
+                    <button type="button" onClick={() => setShowAddAssetModal(false)} className="sm:w-40 py-3 rounded-xl border border-[#1b2440] bg-[#0e1426] hover:bg-[#141c33] text-sm font-semibold text-[#c3cae2]">Cancel</button>
+                    <button type="submit" disabled={assetUploading} className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed">
+                      {assetUploading ? "Uploading and checking…" : "Submit property"}
+                    </button>
+                  </div>
+                </form>
               </div>
-
-              <form onSubmit={handleAssetUpload} className="space-y-4 mt-5">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                    Property / Asset Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={assetUploadData.assetName}
-                    onChange={(e) => setAssetUploadData({ ...assetUploadData, assetName: e.target.value })}
-                    placeholder="e.g. Colombo Oceanfront Luxury Villa"
-                    className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                      Token Symbol / Code *
-                    </label>
-                    <input
-                      type="text"
-                      value={assetUploadData.symbol}
-                      onChange={(e) => setAssetUploadData({ ...assetUploadData, symbol: e.target.value })}
-                      placeholder="e.g. COL-01"
-                      className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                      Asset Type *
-                    </label>
-                    <select
-                      value={assetUploadData.assetType}
-                      onChange={(e) => setAssetUploadData({ ...assetUploadData, assetType: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none"
-                    >
-                      <option value="real_estate">Residential Real Estate</option>
-                      <option value="commercial">Commercial Plaza</option>
-                      <option value="villa">Boutique Heritage Villa</option>
-                      <option value="land">Development Land</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                      Appraised Valuation (LKR) *
-                    </label>
-                    <input
-                      type="number"
-                      value={assetUploadData.valuation}
-                      onChange={(e) => setAssetUploadData({ ...assetUploadData, valuation: e.target.value })}
-                      placeholder="e.g. 10000000"
-                      className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                      Total Fractional Shares *
-                    </label>
-                    <input
-                      type="number"
-                      value={assetUploadData.totalShares}
-                      onChange={(e) => setAssetUploadData({ ...assetUploadData, totalShares: e.target.value })}
-                      placeholder="e.g. 1000"
-                      className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Document Uploads */}
-                <div className="space-y-3 pt-2">
-                  <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
-                    Supporting Legal Deeds & Survey Plans
-                  </h4>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800">
-                      <label className="block text-xs font-medium text-zinc-300 mb-1">
-                        Title Deed Document *
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => setAssetFiles({ ...assetFiles, deed: e.target.files?.[0] })}
-                        className="w-full text-xs text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:bg-zinc-800 file:text-zinc-200"
-                      />
-                    </div>
-
-                    <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800">
-                      <label className="block text-xs font-medium text-zinc-300 mb-1">
-                        Cadastral Survey Plan *
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => setAssetFiles({ ...assetFiles, surveyPlan: e.target.files?.[0] })}
-                        className="w-full text-xs text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:bg-zinc-800 file:text-zinc-200"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tokenization Workflow Preview */}
-                <div className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 text-xs text-zinc-400 space-y-1">
-                  <div className="flex items-center gap-2 text-zinc-300 font-semibold mb-1">
-                    <Clock className="w-3.5 h-3.5 text-blue-400" />
-                    Automated Tokenization Protocol:
-                  </div>
-                  <p>1. Deed hashed with SHA-256 and verified through AI OCR.</p>
-                  <p>2. Compliance officers verify Land Registry title clearance.</p>
-                  <p>3. AssetRegistry mints {Number(assetUploadData.totalShares || 1000).toLocaleString()} ERC-1155 fractional shares to your wallet.</p>
-                </div>
-
-                <div className="pt-2 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddAssetModal(false)}
-                    className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={assetUploading}
-                    className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/25 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {assetUploading ? "Uploading & Hashing..." : "Register & Submit Asset"}
-                  </button>
-                </div>
-              </form>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </main>
 
       {/* Add Wallet Modal */}

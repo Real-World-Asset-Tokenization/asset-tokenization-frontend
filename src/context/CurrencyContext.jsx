@@ -142,6 +142,7 @@ export function CurrencyProvider({ children }) {
    * Specific helper to convert mUSD (USD-pegged ERC20) amounts to selected currency
    */
   const formatMUSD = (mUsdAmount, options = {}) => {
+    if (mUsdAmount == null) return "Unavailable";
     return formatAmount(mUsdAmount, 'USD', options);
   };
 

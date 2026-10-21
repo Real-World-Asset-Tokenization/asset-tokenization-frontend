@@ -1,5 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { authAPI } from "../lib/api";
+
+const TAKEN_MSG = "This wallet is already linked to another user in this system. Each wallet can belong to only one account, so pick a different MetaMask account.";
+
+// "other_user" when another account already owns the wallet; null if the check could not run.
+const walletOwner = (addr) => authAPI.checkWallet(addr.toLowerCase()).then((r) => r.data?.data?.status).catch(() => null);
 import { Wallet, ShieldAlert, CheckCircle2, AlertCircle, X, Sparkles, ArrowRight } from "lucide-react";
 
 export default function AddWalletModal({ isOpen, onClose, onSuccess }) {
@@ -45,6 +51,7 @@ export default function AddWalletModal({ isOpen, onClose, onSuccess }) {
       const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
       if (accounts && accounts.length > 0) {
         setWalletInput(accounts[0]);
+        if ((await walletOwner(accounts[0])) === "other_user") setError(TAKEN_MSG);
       } else {
         setError("No accounts found in MetaMask. Please unlock MetaMask and try again.");
       }
@@ -71,6 +78,10 @@ export default function AddWalletModal({ isOpen, onClose, onSuccess }) {
 
     try {
       setSaving(true);
+      if ((await walletOwner(trimmed)) === "other_user") {
+        setError(TAKEN_MSG);
+        return;
+      }
       await linkWallet(trimmed);
       setSuccess("Wallet address successfully linked to your account!");
       if (onSuccess) {
@@ -82,7 +93,7 @@ export default function AddWalletModal({ isOpen, onClose, onSuccess }) {
     } catch (err) {
       const serverMsg = err.response?.data?.message || err.response?.data?.errors?.[0]?.msg || err.message;
       if (serverMsg && (serverMsg.includes("already associated") || serverMsg.includes("already linked") || serverMsg.includes("duplicate"))) {
-        setError("This wallet ID is already linked to another user account. In this system, the same wallet ID cannot belong to different users.");
+        setError(TAKEN_MSG);
       } else {
         setError(serverMsg || "Failed to link wallet. Please verify the address and try again.");
       }
@@ -189,7 +200,7 @@ export default function AddWalletModal({ isOpen, onClose, onSuccess }) {
                 />
               </div>
               <p className="text-[11px] text-zinc-500 mt-1">
-                Enter your 42-character hex address. This wallet will hold your tokens and dividend payouts.
+                Enter your 42-character hex address. This wallet will hold your tokens and payments.
               </p>
             </div>
 

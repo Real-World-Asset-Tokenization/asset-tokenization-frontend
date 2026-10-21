@@ -1,6 +1,7 @@
 import React from "react";
 import { MapPin, Coins, TrendingUp, ShieldCheck, ArrowRightLeft, Eye, ShoppingCart } from "lucide-react";
 import { useCurrency } from "../context/CurrencyContext";
+import { referenceTokenPriceLKR } from "../lib/tokenPrice";
 
 export default function AssetCard({
   asset,
@@ -13,6 +14,7 @@ export default function AssetCard({
   const { currency, formatLKR } = useCurrency();
   const isTokenized = asset.status === "Tokenized";
   const userTokens = userBalance || 0;
+  const tokenPriceLKR = referenceTokenPriceLKR(asset);
   const isIssuer = wallet?.account && asset.issuerWallet && wallet.account.toLowerCase() === asset.issuerWallet.toLowerCase();
   const ownershipPercentage = asset.totalShares > 0
     ? ((userTokens / asset.totalShares) * 100).toFixed(1)
@@ -97,20 +99,20 @@ export default function AssetCard({
             </div>
             <div>
               <p className="text-[11px] text-[#94A3BB] font-medium">Total Fractions</p>
-              <p className="text-sm font-bold text-[#00E5FF] mt-0.5 flex items-center gap-1">
-                <Coins className="w-3.5 h-3.5 text-[#00E5FF]" />
+              <p className="text-sm font-bold text-[#22e07a] mt-0.5 flex items-center gap-1">
+                <Coins className="w-3.5 h-3.5 text-[#22e07a]" />
                 {asset.totalShares.toLocaleString()} Units
               </p>
             </div>
             <div>
               <p className="text-[11px] text-[#94A3BB] font-medium">Fraction Price ({currency})</p>
               <p className="text-sm font-bold text-slate-200 mt-0.5">
-                {formatLKR(asset.sharePriceLKR || (asset.valuationLKR / asset.totalShares))}
+                {tokenPriceLKR > 0 ? formatLKR(tokenPriceLKR) : "Unavailable"}
               </p>
             </div>
             <div>
               <p className="text-[11px] text-[#94A3BB] font-medium">Your Ownership</p>
-              <p className={`text-sm font-bold mt-0.5 ${userTokens > 0 ? "text-[#00E5FF]" : "text-[#94A3BB]"}`}>
+              <p className={`text-sm font-bold mt-0.5 ${userTokens > 0 ? "text-[#22e07a]" : "text-[#94A3BB]"}`}>
                 {userTokens} Units ({ownershipPercentage}%)
               </p>
             </div>
@@ -130,7 +132,7 @@ export default function AssetCard({
           {isTokenized && (
             <button
               onClick={() => onOpenBuy(asset)}
-              className="flex items-center justify-center space-x-1.5 py-2 px-3 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-white shadow-md shadow-[#4F46E5]/35 text-xs font-semibold transition-all cursor-pointer"
+              className="flex items-center justify-center space-x-1.5 py-2 px-3 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-white shadow-md shadow-[#16a34a]/35 text-xs font-semibold transition-all cursor-pointer"
               title="Buy Fractional Shares"
             >
               <ShoppingCart className="w-3.5 h-3.5 text-white" />
@@ -141,10 +143,10 @@ export default function AssetCard({
           {userTokens > 0 && (
             <button
               onClick={() => onOpenTransfer(asset)}
-              className="flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-xl bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40 text-xs font-semibold transition-all cursor-pointer shadow-sm shadow-[#00E5FF]/20"
+              className="flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-xl bg-[#22e07a]/10 hover:bg-[#22e07a]/20 text-[#22e07a] border border-[#22e07a]/40 text-xs font-semibold transition-all cursor-pointer shadow-sm shadow-[#22e07a]/20"
               title="Transfer Fractional Ownership"
             >
-              <ArrowRightLeft className="w-3.5 h-3.5 text-[#00E5FF]" />
+              <ArrowRightLeft className="w-3.5 h-3.5 text-[#22e07a]" />
               <span>Transfer</span>
             </button>
           )}

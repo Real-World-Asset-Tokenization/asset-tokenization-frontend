@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { authAPI } from '../lib/api';
 import { resolveUserWallet } from '../lib/walletResolver';
 
@@ -6,6 +6,7 @@ const AuthContext = createContext(undefined);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const sessionVersion = useRef(0);
 
   useEffect(() => {
     // Check for stored user data on mount
@@ -22,7 +23,9 @@ export function AuthProvider({ children }) {
 
         // Refresh user profile from backend (reads authoritative walletAddress from DB)
         if (parsed.token) {
+          const version = sessionVersion.current;
           authAPI.getMe().then((res) => {
+            if (version !== sessionVersion.current) return;
             if (res.data?.data?.user) {
               const fresh = { ...parsed, ...res.data.data.user };
               const freshResolved = resolveUserWallet(fresh);
@@ -41,6 +44,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = (userData) => {
+    sessionVersion.current += 1;
     const resolved = resolveUserWallet(userData);
     if (resolved) {
       userData.walletAddress = resolved;
@@ -51,6 +55,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    sessionVersion.current += 1;
     setUser(null);
     localStorage.removeItem('user');
     localStorage.removeItem('token');
@@ -66,8 +71,10 @@ export function AuthProvider({ children }) {
   };
 
   const linkWallet = async (walletAddress) => {
+    const version = sessionVersion.current;
     const normalized = (walletAddress || '').toLowerCase().trim();
     const res = await authAPI.updateWallet(normalized);
+    if (version !== sessionVersion.current) return res.data;
     const serverWallet = res.data?.data?.user?.walletAddress || normalized;
     updateUserWallet(serverWallet);
     return res.data;
@@ -84,7 +91,9 @@ export function AuthProvider({ children }) {
         isAuthenticated: !!user
       }}
     >
-      {children}
+      <React.Fragment key={`${user?._id || user?.id || user?.email || "guest"}:${resolveUserWallet(user) || "unlinked"}`}>
+        {children}
+      </React.Fragment>
     </AuthContext.Provider>
   );
 }

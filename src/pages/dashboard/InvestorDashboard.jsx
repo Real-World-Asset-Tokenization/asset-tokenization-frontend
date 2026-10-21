@@ -1,3 +1,6 @@
+import PropertyValueChart from "../../components/PropertyValueChart";
+import InvestorReturns from "../../components/InvestorReturns";
+import HeldPropertyValuations from "../../components/HeldPropertyValuations";
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -25,16 +28,21 @@ import {
 } from "lucide-react";
 import { getPaymentTokenBalance, getTokenBalance } from "../../services/contractService";
 import { resolveUserWallet } from "../../lib/walletResolver";
+import { loadInvestorReturns } from "../../services/investorReturns";
+import { summarizeHoldings, signClass, pct } from "../../lib/portfolioSummary";
 import AddWalletModal from "../../components/AddWalletModal";
+import IdMethodPicker, { idMethod } from "../../components/IdMethodPicker";
 
-export default function InvestorDashboard() {
+// view="kyc" shows only identity verification (sidebar: KYC Verification).
+export default function InvestorDashboard({ view = "full" }) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { currency, formatMUSD, formatLKR } = useCurrency();
+  const { currency, formatMUSD, formatLKR, convert } = useCurrency();
   const [showAddWalletModal, setShowAddWalletModal] = useState(false);
 
-  // Tab state: 'holdings' | 'kyc' | 'yield'
-  const [activeTab, setActiveTab] = useState("holdings");
+  // Tab state: 'holdings' | 'kyc'
+  const [activeTab, setActiveTab] = useState(view === "kyc" ? "kyc" : "holdings");
+  useEffect(() => { if (view === "kyc") setActiveTab("kyc"); }, [view]);
 
   // KYC States
   const [kycStatus, setKycStatus] = useState(null);
@@ -44,11 +52,14 @@ export default function InvestorDashboard() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [idNumber, setIdNumber] = useState("");
+  const [idType, setIdType] = useState("national_id");
+  useEffect(() => { if (kycStatus?.idType) setIdType(kycStatus.idType); }, [kycStatus]);
 
   // Blockchain & Holdings States: Real on-chain data
   const [account, setAccount] = useState("");
-  const [mUsdBalance, setMUsdBalance] = useState(0);
+  const [mUsdBalance, setMUsdBalance] = useState(null);
   const [holdings, setHoldings] = useState([]);
+  const [holdingsError, setHoldingsError] = useState("");
 
   useEffect(() => {
     fetchKYCStatus();
@@ -72,18 +83,7 @@ export default function InvestorDashboard() {
   }, [user]);
 
   const checkWallet = async (explicitAddress = null) => {
-    let userAddr = explicitAddress;
-    if (!userAddr) {
-      if (window.ethereum) {
-        try {
-          const accs = await window.ethereum.request({ method: "eth_accounts" });
-          if (accs && accs.length > 0) userAddr = accs[0];
-        } catch (e) {}
-      }
-      if (!userAddr) {
-        userAddr = user?.walletAddress || resolveUserWallet(user) || "";
-      }
-    }
+    const userAddr = resolveUserWallet(user);
 
     if (!userAddr) {
       setAccount("");
@@ -102,35 +102,20 @@ export default function InvestorDashboard() {
       console.warn("Payment bal error:", e);
     }
 
-    // 2. Fetch real database assets and read real on-chain ERC-1155 shares for this user's wallet only
+    // 2. Holdings straight from the chain: balances, the approved valuation (updated by
+    //    published revaluations), purchase cost from marketplace trades, .
     try {
-      const res = await fetch("http://localhost:5001/api/assets");
-      const data = await res.json();
-      if (data.success && data.data) {
-        const realHoldings = [];
-        for (const asset of data.data) {
-          const sharesOwned = await getTokenBalance(userAddr, asset.assetId);
-          if (sharesOwned > 0) {
-            const price = 25; // Current secondary market price per share in mUSD
-            realHoldings.push({
-              tokenId: asset.assetId,
-              assetName: asset.assetName || asset.name,
-              symbol: asset.symbol || `RWA-0${asset.assetId}`,
-              sharesOwned: sharesOwned || 0,
-              totalShares: asset.totalShares || 1000,
-              pricePerShare: price,
-              totalValue: (sharesOwned || 0) * price,
-              expectedApy: "9.2%",
-              lastPayout: `${((sharesOwned || 0) * 0.092).toFixed(2)} mUSD`,
-              location: asset.location || "Colombo, Sri Lanka",
-              status: asset.status
-            });
-          }
-        }
-        setHoldings(realHoldings);
-      }
+      setHoldingsError("");
+      const [rows, assetsRes] = await Promise.all([
+        loadInvestorReturns(userAddr),
+        fetch("http://localhost:5001/api/assets").then((r) => r.json()).catch(() => null),
+      ]);
+      const locations = new Map((assetsRes?.data || []).map((a) => [Number(a.blockchainAssetId ?? a.tokenId ?? a.assetId), a.location]));
+      const { holdings: held } = summarizeHoldings(rows.filter((r) => r.balance > 0), [], convert);
+      setHoldings(held.map((h) => ({ ...h, location: locations.get(h.id) || "" })));
     } catch (e) {
-      console.warn("Failed to load real on-chain assets:", e);
+      console.warn("Failed to load on-chain holdings:", e);
+      setHoldingsError(e.message || "Could not read your holdings from the blockchain");
     }
   };
 
@@ -181,7 +166,7 @@ export default function InvestorDashboard() {
 
     const formData = new FormData();
     formData.append("document", file);
-    formData.append("idType", "national_id");
+    formData.append("idType", idType);
     formData.append("idNumber", idNumber);
 
     try {
@@ -227,22 +212,14 @@ export default function InvestorDashboard() {
       await fetchKYCStatus();
       setSuccessMsg("AI Identity & Biometric Verification Completed!");
     } catch (err) {
-      // Demo mock approval
-      setKycStatus((prev) => ({
-        ...prev,
-        verificationStatus: "approved",
-        faceScore: 94,
-        riskScore: 10,
-        documentAuthentic: true
-      }));
-      setSuccessMsg("KYC Verification Pipeline Passed!");
+      setError(err.response?.data?.message || "Verification could not be completed. Please try again.");
     } finally {
       setVerifying(false);
     }
   };
 
-  const totalPortfolioValue = holdings.reduce((sum, h) => sum + h.totalValue, 0);
-  const totalSharesOwned = holdings.reduce((sum, h) => sum + h.sharesOwned, 0);
+  const totalValueUSD = holdings.reduce((sum, h) => sum + h.valueUSD, 0);
+  const totalSharesOwned = holdings.reduce((sum, h) => sum + h.balance, 0);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
@@ -259,7 +236,7 @@ export default function InvestorDashboard() {
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-3xl font-black tracking-tight text-white">
-                    Investor Portal
+                    {view === "kyc" ? "KYC Verification" : "Investor Portal"}
                   </h1>
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
                     Investor View
@@ -299,13 +276,6 @@ export default function InvestorDashboard() {
               <ShoppingBag className="w-4 h-4" />
               Buy Shares on Marketplace
             </Link>
-            <Link
-              to="/claims"
-              className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-emerald-400 border border-zinc-800 font-semibold text-xs rounded-xl transition-all"
-            >
-              <Gift className="w-4 h-4" />
-              Claim Dividends
-            </Link>
           </div>
         </div>
 
@@ -336,7 +306,7 @@ export default function InvestorDashboard() {
                   <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full uppercase tracking-wider">Action Needed</span>
                 </h4>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Link your unique Ethereum wallet address to this account to view your portfolio, holdings, and receive dividends.
+                  Link your unique Ethereum wallet address to this account to view your portfolio and holdings.
                 </p>
               </div>
             </div>
@@ -350,16 +320,20 @@ export default function InvestorDashboard() {
           </div>
         )}
 
+        {view !== "kyc" && (<>
+        <PropertyValueChart />
+        <InvestorReturns />
+        <div className="mt-8"><HeldPropertyValuations mode="investor" /></div>
         {/* Top Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {/* Card 1: Portfolio Value */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-xl">
-            <div className="text-xs font-medium text-zinc-400 mb-1">Total Token Holdings</div>
+            <div className="text-xs font-medium text-zinc-400 mb-1">Value of Token Holdings</div>
             <div className="text-2xl font-black text-white">
-              {totalPortfolioValue.toLocaleString()} mUSD
+              {formatMUSD(totalValueUSD)}
             </div>
-            <div className="text-xs text-blue-400 mt-1 font-mono">
-              ≈ {formatMUSD(totalPortfolioValue)}
+            <div className="text-xs text-blue-400 mt-1">
+              Cost moved by land-value change since purchase
             </div>
           </div>
 
@@ -367,7 +341,7 @@ export default function InvestorDashboard() {
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-xl">
             <div className="text-xs font-medium text-zinc-400 mb-1">mUSD Cash Balance</div>
             <div className="text-2xl font-black text-emerald-400">
-              {mUsdBalance.toLocaleString()} mUSD
+              {mUsdBalance == null ? "Balance unavailable" : `${mUsdBalance.toLocaleString()} mUSD`}
             </div>
             <div className="text-xs text-zinc-400 mt-1 font-mono">
               ≈ {formatMUSD(mUsdBalance)}
@@ -436,21 +410,11 @@ export default function InvestorDashboard() {
             <ShieldCheck className="w-4 h-4" />
             Investor KYC & Identity Verification
           </button>
-
-          <button
-            onClick={() => setActiveTab("yield")}
-            className={`pb-4 font-bold text-sm flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === "yield"
-                ? "border-b-2 border-blue-500 text-blue-400"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            <TrendingUp className="w-4 h-4" />
-            Time-Weighted Yield & Claims
-          </button>
         </div>
 
         {/* TAB 1: FRACTIONAL HOLDINGS */}
+        </>)}
+
         {activeTab === "holdings" && (
           <div className="space-y-6">
             {!account ? (
@@ -461,7 +425,7 @@ export default function InvestorDashboard() {
                 <div className="max-w-md mx-auto space-y-1">
                   <h3 className="text-lg font-bold text-white">Wallet Not Added to Account</h3>
                   <p className="text-xs text-zinc-400 leading-relaxed">
-                    Connect your MetaMask wallet or add your wallet address to this investor account to view your personal fractional token holdings and track yields.
+                    Connect your MetaMask wallet or add your wallet address to this investor account to view your personal fractional token holdings and track their value.
                   </p>
                 </div>
                 <button
@@ -472,6 +436,8 @@ export default function InvestorDashboard() {
                   Add / Connect Wallet
                 </button>
               </div>
+            ) : holdingsError ? (
+              <p role="alert" className="text-amber-300 text-sm">{holdingsError}</p>
             ) : holdings.length === 0 ? (
               <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-12 text-center space-y-4">
                 <div className="w-14 h-14 rounded-2xl bg-zinc-800/80 border border-zinc-700/60 flex items-center justify-center mx-auto text-zinc-400">
@@ -498,59 +464,53 @@ export default function InvestorDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {holdings.map((item) => (
                   <div
-                    key={item.tokenId}
+                    key={item.id}
                     className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between hover:border-zinc-700 transition-all"
                   >
                     <div>
                       <div className="flex items-center justify-between mb-3">
                         <span className="px-2.5 py-1 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-400">
-                          {item.symbol} • Token #{item.tokenId}
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          Yield {item.expectedApy} APY
+                          Token #{item.id}
                         </span>
                       </div>
 
-                      <h3 className="text-lg font-bold text-white mb-1">{item.assetName}</h3>
-                      <p className="text-xs text-zinc-400 mb-4">{item.location}</p>
+                      <h3 className="text-lg font-bold text-white mb-1">{item.name}</h3>
+                      {item.location && <p className="text-xs text-zinc-400 mb-4">{item.location}</p>}
 
                       <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-xl p-3.5 space-y-2 text-xs mb-4">
                         <div className="flex justify-between text-zinc-400">
-                          <span>Shares Owned:</span>
+                          <span>Tokens owned:</span>
                           <span className="font-bold text-white">
-                            {item.sharesOwned.toLocaleString()} Shares ({( (item.sharesOwned / item.totalShares) * 100 ).toFixed(1)}%)
+                            {item.balance.toLocaleString()} of {item.supply.toLocaleString()} ({((item.balance / item.supply) * 100).toFixed(2)}%)
                           </span>
                         </div>
                         <div className="flex justify-between text-zinc-400">
-                          <span>Current Value:</span>
-                          <div className="text-right">
-                            <span className="font-bold text-emerald-400">
-                              {item.totalValue.toLocaleString()} mUSD
-                            </span>
-                            <span className="block text-[10px] text-zinc-500 font-mono">
-                              ≈ {formatMUSD(item.totalValue)}
-                            </span>
-                          </div>
+                          <span>Reference price / token:</span>
+                          <span className="text-zinc-200">{formatLKR(item.valuationLKR / item.supply)}</span>
                         </div>
                         <div className="flex justify-between text-zinc-400">
-                          <span>Latest Yield Payout:</span>
-                          <span className="text-zinc-200 font-medium">{item.lastPayout}</span>
+                          <span>Current value:</span>
+                          <span className="font-bold text-emerald-400">{formatMUSD(item.valueUSD)}</span>
+                        </div>
+                        <div className="flex justify-between text-zinc-400">
+                          <span>You paid:</span>
+                          <span className="text-zinc-200">{item.costUSD == null ? "Not recorded" : formatMUSD(item.costUSD)}</span>
+                        </div>
+                        <div className="flex justify-between text-zinc-400">
+                          <span>{item.unrealizedUSD != null && item.unrealizedUSD < 0 ? "Unrealized loss:" : "Unrealized profit:"}</span>
+                          <span className={`font-semibold text-right ${signClass(item.unrealizedUSD)}`}>
+                            {item.unrealizedUSD == null ? "—" : `${formatMUSD(item.unrealizedUSD)} (${pct(item.unrealizedPct)})`}
+                          </span>
                         </div>
                       </div>
                     </div>
 
                     <div className="pt-2 border-t border-zinc-800/60 flex gap-3">
                       <Link
-                        to="/marketplace"
+                        to={`/marketplace/sell?asset=${item.id}`}
                         className="flex-1 py-2 text-center bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-blue-500/20 transition-all"
                       >
-                        Trade / Sell on Marketplace
-                      </Link>
-                      <Link
-                        to="/claims"
-                        className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-emerald-400 font-medium text-xs rounded-xl transition-all"
-                      >
-                        Claim Yield
+                        Sell tokens
                       </Link>
                     </div>
                   </div>
@@ -574,15 +534,17 @@ export default function InvestorDashboard() {
               </p>
 
               <div className="space-y-4">
+                <IdMethodPicker value={idType} onChange={setIdType} disabled={uploading} />
+
                 <div>
                   <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                    National ID / Passport Number
+                    {idMethod(idType)[2]}
                   </label>
                   <input
                     type="text"
                     value={idNumber}
                     onChange={(e) => setIdNumber(e.target.value)}
-                    placeholder="e.g. 199512345678"
+                    placeholder={`Enter your ${idMethod(idType)[2].toLowerCase()}`}
                     className="w-full px-4 py-2.5 rounded-xl border border-zinc-800 bg-zinc-950 text-white text-xs focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -644,75 +606,33 @@ export default function InvestorDashboard() {
                 <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-3 text-xs">
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Verification Status:</span>
-                    <span className="font-bold text-emerald-400 uppercase">
-                      {kycStatus?.verificationStatus || "Approved"}
+                    <span className={`font-bold uppercase ${kycStatus?.verificationStatus === "approved" ? "text-emerald-400" : kycStatus?.verificationStatus === "rejected" ? "text-rose-400" : "text-amber-400"}`}>
+                      {(kycStatus?.verificationStatus || "not started").replace("_", " ")}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Facial Match Confidence:</span>
                     <span className="font-semibold text-white">
-                      {kycStatus?.faceScore || 94}% Confidence
+                      {kycStatus?.pipelineResults ? `${kycStatus.faceScore}% confidence` : "Not checked yet"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Compliance Risk Score:</span>
-                    <span className="font-semibold text-emerald-400">
-                      {kycStatus?.riskScore || 10}/100 (Ultra Low Risk)
+                    <span className="font-semibold text-white">
+                      {kycStatus?.pipelineResults ? `${kycStatus.riskScore}/100` : "Not checked yet"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Document Authenticity:</span>
-                    <span className="font-semibold text-emerald-400">
-                      ✓ Authentic Government ID
+                    <span className={`font-semibold ${kycStatus?.documentAuthentic ? "text-emerald-400" : "text-zinc-300"}`}>
+                      {kycStatus?.documentAuthentic ? "✓ Authentic government ID" : kycStatus?.pipelineResults ? "Not confirmed" : "Not checked yet"}
                     </span>
                   </div>
                 </div>
               </div>
 
               <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-400 mt-4">
-                <strong>Investor Privilege:</strong> Your account is authorized to trade up to $250,000 mUSD in tokenized properties.
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: YIELD & CLAIMS */}
-        {activeTab === "yield" && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800 pb-6">
-              <div>
-                <h3 className="text-lg font-bold text-white">Time-Weighted Yield Accounting</h3>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Profits are mathematically calculated in token-seconds so you receive exact returns proportional to the time you held each share.
-                </p>
-              </div>
-
-              <Link
-                to="/claims"
-                className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/25 transition-all flex items-center gap-2"
-              >
-                <Gift className="w-4 h-4" />
-                Open Merkle Claims Window
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl">
-                <span className="text-xs text-zinc-400 block mb-1">Time-Weighted Integral</span>
-                <span className="text-xl font-bold text-white">43,200,000</span>
-                <span className="text-[10px] text-zinc-500 block">Token-Seconds Accumulated</span>
-              </div>
-
-              <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl">
-                <span className="text-xs text-zinc-400 block mb-1">Total Dividends Claimed</span>
-                <span className="text-xl font-bold text-emerald-400">124.50 mUSD</span>
-                <span className="text-[10px] text-zinc-500 block">≈ {formatMUSD(124.5)}</span>
-              </div>
-
-              <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl">
-                <span className="text-xs text-zinc-400 block mb-1">Pending Merkle Root Claims</span>
-                <span className="text-xl font-bold text-blue-400">19.55 mUSD</span>
-                <span className="text-[10px] text-zinc-500 block">Available to claim now</span>
+                {kycStatus?.verificationStatus === "approved" ? "Your identity is verified. You can trade tokenized properties." : "Complete identity verification to trade tokenized properties."}
               </div>
             </div>
           </div>

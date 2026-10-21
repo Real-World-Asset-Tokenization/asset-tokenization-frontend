@@ -1,552 +1,511 @@
-import { useState, useEffect } from "react";
-import { ethers } from "ethers";
-import Navbar from "../components/Navbar";
-import { getContracts, getPaymentTokenBalance, trackTxGas } from "../services/contractService";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Tag, Coins, Layers, Store, Building2, AlertTriangle, CheckCircle2, X, RefreshCw, Wallet, Percent } from "lucide-react";
+import { AssetDetail, InvestorCatalog } from "../components/AssetExplorer";
+import { getContracts, trackTxGas, getPaymentTokenBalance } from "../services/contractService";
+import { useRole } from "../context/RoleContext";
+import { InvestorBrowse, BestDeals, MyPurchases, gapInfo } from "../components/market/InvestorViews";
+import { loadMyTrades } from "../services/tokenSales";
+import { useAllTrades } from "../lib/useAllTrades";
+import MarketWatch from "../components/market/MarketWatch";
 import { useCurrency } from "../context/CurrencyContext";
-import {
-  ShoppingBag,
-  PlusCircle,
-  Clock,
-  Coins,
-  ShieldCheck,
-  CheckCircle2,
-  AlertCircle,
-  X,
-  ExternalLink,
-  ArrowUpRight
-} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { resolveUserWallet } from "../lib/walletResolver";
+import { useMarketplaceData, isActiveOffer, sellerKind } from "../lib/marketplaceData";
+import { PageHeader, ActionButton, Stat, Badge, SellerTag, cardClass, pageClass, fmtDate } from "../components/ui/dash";
+
+// How far a price may stray from the approved reference price before we warn.
+const PRICE_WARNING_RATIO = 0.5;
+// Owners and issuers manage sales; investors mostly buy, so they get a buy-first layout.
+const OWNER_TABS = [["market", "Market"], ["browse", "Buy tokens"], ["offers", "All offers"], ["mine", "My sales"]];
+const INVESTOR_TABS = [["browse", "Browse"], ["deals", "Best deals"], ["market", "Market"], ["purchases", "My purchases"], ["mine", "My sales"]];
 
 export default function Marketplace() {
-  const { currency, formatMUSD } = useCurrency();
-  const [listings, setListings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [account, setAccount] = useState("");
-  const [mUsdBal, setMUsdBal] = useState(0);
-
-  // Buy modal
-  const [selectedListing, setSelectedListing] = useState(null);
-  const [buying, setBuying] = useState(false);
-  const [buyStep, setBuyStep] = useState(""); // "approving" | "purchasing" | "done"
-  const [txHash, setTxHash] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
-
-  // Create listing modal
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [assetId, setAssetId] = useState(1);
-  const [sellAmount, setSellAmount] = useState(10);
-  const [sellPrice, setSellPrice] = useState(100);
-  const [durationDays, setDurationDays] = useState(30);
-  const [creating, setCreating] = useState(false);
-
+  const { assetId: detailAssetId } = useParams();
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const { formatMUSD, convert } = useCurrency();
+  const { user } = useAuth();
+  const { isInvestor } = useRole();
+  const TABS = isInvestor ? INVESTOR_TABS : OWNER_TABS;
+  const wallet = resolveUserWallet(user);
+  const data = useMarketplaceData({ wallet });
+  const [cash, setCash] = useState(null);
   useEffect(() => {
-    initWallet();
-    fetchListings();
+    let cancelled = false;
+    setCash(null);
+    if (isInvestor && wallet) getPaymentTokenBalance(wallet).then((b) => { if (!cancelled) setCash(b); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isInvestor, wallet]);
+  const { assets, listings, reference, assetsLoading, listingsLoading, assetsError, listingsError, reload, loadListings } = data;
+  const tab = TABS.some(([k]) => k === params.get("tab")) ? params.get("tab") : TABS[0][0];
+  const setTab = (k) => { const next = new URLSearchParams(params); next.set("tab", k); setParams(next, { replace: true }); };
 
-    if (window.ethereum) {
-      const handleAccounts = async (accounts) => {
-        if (accounts && accounts.length > 0) {
-          setAccount(accounts[0]);
-          try {
-            const bal = await getPaymentTokenBalance(accounts[0]);
-            setMUsdBal(bal);
-          } catch (e) {
-            setMUsdBal(0);
-          }
-        } else {
-          setAccount("");
-          setMUsdBal(0);
-        }
-      };
-      window.ethereum.on("accountsChanged", handleAccounts);
-      return () => {
-        if (window.ethereum?.removeListener) {
-          window.ethereum.removeListener("accountsChanged", handleAccounts);
-        }
-      };
-    }
-  }, []);
+  // Older links used ?sellAsset=<database id>; send them to the new sell page.
+  useEffect(() => {
+    const legacy = params.get("sellAsset");
+    if (!legacy || assetsLoading) return;
+    const a = assets.find((x) => String(x.assetId) === legacy);
+    navigate(`/marketplace/sell${a ? `?asset=${a.tokenId}` : ""}`, { replace: true });
+  }, [params, assets, assetsLoading, navigate]);
 
-  const initWallet = async () => {
-    if (window.ethereum) {
-      const accounts = await window.ethereum.request({ method: "eth_accounts" });
-      if (accounts.length > 0) {
-        setAccount(accounts[0]);
-        const bal = await getPaymentTokenBalance(accounts[0]);
-        setMUsdBal(bal);
-      }
-    }
-  };
+  const byToken = useMemo(() => new Map(assets.map((a) => [Number(a.tokenId), a])), [assets]);
+  const refUsd = (tokenId) => (reference[Number(tokenId)] != null ? Number(convert(reference[Number(tokenId)], "LKR", "USD").toFixed(2)) : null);
+  const gapOf = (tokenId, price) => { const r = refUsd(tokenId); return r && price > 0 ? price / r - 1 : null; };
+  const mineFilter = (o) => wallet && o.seller.toLowerCase() === wallet;
+  // Only offers for properties that exist on the current chain.
+  const known = listings.filter((o) => byToken.has(Number(o.assetId)));
+  const active = known.filter(isActiveOffer);
+  const myOffers = known.filter(mineFilter);
+  const forSale = new Set(active.map((o) => Number(o.assetId)));
+  const holdings = assets.filter((a) => (a.ownership?.viewerBalance || 0) > 0);
 
-  const fetchListings = async () => {
+  // Trade history for the market watch; reloads when any offer changes.
+  const offersKey = listings.map((l) => `${l.listingId}:${l.amount}:${l.status}`).join(",");
+  const market = useAllTrades(offersKey);
+
+  // Completed sales come from on-chain purchase events, because an offer's own
+  // token count drops to zero once it sells out.
+  const [trades, setTrades] = useState(null);
+  const [tradesError, setTradesError] = useState("");
+  const loadTrades = useCallback(async () => {
+    if (!wallet) { setTrades([]); return; }
     try {
-      setLoading(true);
-      const res = await fetch("http://localhost:5001/api/marketplace/listings");
-      const data = await res.json();
-      if (data.success) {
-        setListings(data.data);
-      }
-    } catch (err) {
-      console.error("Failed to load listings:", err);
-    } finally {
-      setLoading(false);
+      setTradesError("");
+      setTrades(await loadMyTrades(wallet));
+    } catch {
+      setTradesError("Your sales history could not be loaded from the blockchain.");
+      setTrades([]);
     }
-  };
+  }, [wallet]);
+  useEffect(() => { loadTrades(); }, [loadTrades, listings]);
+
+  // ----- buy -----
+  const [selected, setSelected] = useState(null);
+  const [buying, setBuying] = useState(false);
+  const [buyStep, setBuyStep] = useState("");
+  const [txHash, setTxHash] = useState("");
+  const [buyError, setBuyError] = useState("");
+  const reviewPurchase = (offer) => { setBuyError(""); setBuyStep(""); setTxHash(""); setSelected(offer); };
 
   const handleBuy = async (listing) => {
     try {
-      setErrorMsg("");
-      setBuying(true);
-      setBuyStep("approving");
-
+      setBuyError(""); setBuying(true); setBuyStep("approving");
       const { tokenMarketplaceContract, paymentTokenContract, addrs, runner } = await getContracts(true);
-      const signerAddr = await runner.getAddress();
-
-      const totalPriceUnits = BigInt(listing.pricePerTokenBase) * BigInt(listing.amount);
-
-      // Check allowance
-      const currentAllowance = await paymentTokenContract.allowance(
-        signerAddr,
-        addrs.tokenMarketplaceAddress
-      );
-
-      if (currentAllowance < totalPriceUnits) {
-        const approveTx = await paymentTokenContract.approve(
-          addrs.tokenMarketplaceAddress,
-          totalPriceUnits
-        );
-        await approveTx.wait();
+      const signer = await runner.getAddress();
+      if (signer.toLowerCase() === listing.seller.toLowerCase()) throw new Error("You cannot buy your own offer.");
+      if (!Number.isSafeInteger(listing.amount) || listing.amount <= 0) throw new Error("Choose a positive whole number of tokens.");
+      const latest = await tokenMarketplaceContract.getListing(listing.listingId);
+      if (Number(latest.status) !== 0 || BigInt(listing.amount) > latest.amount) throw new Error("This offer has changed. Refresh and choose an available quantity.");
+      const partial = tokenMarketplaceContract.interface.hasFunction("buyListingAmount");
+      if (!partial && BigInt(listing.amount) !== latest.amount) throw new Error("This marketplace deployment only supports buying whole offers.");
+      const total = BigInt(listing.pricePerTokenBase) * BigInt(listing.amount);
+      if ((await paymentTokenContract.allowance(signer, addrs.tokenMarketplaceAddress)) < total) {
+        await (await paymentTokenContract.approve(addrs.tokenMarketplaceAddress, total)).wait();
       }
-
       setBuyStep("purchasing");
-      const buyTx = await tokenMarketplaceContract.buyListing(listing.listingId);
-      const receipt = await buyTx.wait();
-
-      setTxHash(receipt.hash);
-      setBuyStep("done");
-
-      // Track gas
-      await trackTxGas(receipt.hash, "MarketplacePurchase", signerAddr, "Investor", listing.assetId);
-
-      // Refresh listings
-      fetchListings();
-      const updatedBal = await getPaymentTokenBalance(signerAddr);
-      setMUsdBal(updatedBal);
+      const tx = partial ? await tokenMarketplaceContract.buyListingAmount(listing.listingId, listing.amount) : await tokenMarketplaceContract.buyListing(listing.listingId);
+      const receipt = await tx.wait();
+      setTxHash(receipt.hash); setBuyStep("done");
+      trackTxGas(receipt.hash, "MarketplacePurchase", signer, "Investor", listing.assetId).catch(() => {});
+      reload();
     } catch (err) {
-      console.error("Buy error:", err);
-      setErrorMsg(err.reason || err.message || "Purchase failed");
+      setBuyError(err.reason || err.shortMessage || err.message || "Purchase failed");
       setBuyStep("");
     } finally {
       setBuying(false);
     }
   };
 
-  const handleSwitchWallet = async () => {
-    try {
-      if (window.ethereum) {
-        await window.ethereum.request({
-          method: "wallet_requestPermissions",
-          params: [{ eth_accounts: {} }],
-        });
-        const accounts = await window.ethereum.request({ method: "eth_accounts" });
-        if (accounts && accounts.length > 0) {
-          setAccount(accounts[0]);
-          const bal = await getPaymentTokenBalance(accounts[0]);
-          setMUsdBal(bal);
-        }
-      }
-    } catch (err) {
-      console.warn("Wallet switch request error:", err.message);
-    }
-  };
-
-  const handleCreateListing = async (e) => {
-    e.preventDefault();
-    try {
-      setCreating(true);
-      setErrorMsg("");
-
-      const { tokenMarketplaceContract, tokenContract, addrs, runner } = await getContracts(true);
-      const signerAddr = await runner.getAddress();
-
-      // Ensure marketplace is approved for ERC-1155 tokens
-      const isApproved = await tokenContract.isApprovedForAll(
-        signerAddr,
-        addrs.tokenMarketplaceAddress
-      );
-
-      if (!isApproved) {
-        const appTx = await tokenContract.setApprovalForAll(
-          addrs.tokenMarketplaceAddress,
-          true
-        );
-        await appTx.wait();
-      }
-
-      const priceBaseUnits = ethers.parseUnits(sellPrice.toString(), 6);
-      const durationSeconds = durationDays * 86400;
-
-      const tx = await tokenMarketplaceContract.createListing(
-        assetId,
-        sellAmount,
-        priceBaseUnits,
-        addrs.paymentTokenAddress,
-        durationSeconds
-      );
-      const receipt = await tx.wait();
-
-      await trackTxGas(receipt.hash, "MarketplaceListing", signerAddr, "Investor", assetId);
-
-      setShowCreateModal(false);
-      fetchListings();
-    } catch (err) {
-      console.error("Create listing error:", err);
-      setErrorMsg(err.reason || err.message || "Failed to create listing");
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleCancelListing = async (listingId) => {
+  // ----- cancel -----
+  const [cancelling, setCancelling] = useState(null);
+  const [confirmCancel, setConfirmCancel] = useState(null);
+  const [cancelError, setCancelError] = useState("");
+  const handleCancel = async (listingId) => {
+    setCancelling(listingId); setCancelError("");
     try {
       const { tokenMarketplaceContract } = await getContracts(true);
-      const tx = await tokenMarketplaceContract.cancelListing(listingId);
-      await tx.wait();
-      fetchListings();
+      await (await tokenMarketplaceContract.cancelListing(listingId)).wait();
+      setConfirmCancel(null);
+      loadListings();
     } catch (err) {
-      alert("Cancellation failed: " + (err.reason || err.message));
+      setCancelError(err.reason || err.shortMessage || err.message || "Cancellation failed");
+    } finally {
+      setCancelling(null);
     }
   };
 
+  if (detailAssetId) {
+    const detail = assets.find((a) => String(a.assetId) === detailAssetId);
+    return (
+      <div className={pageClass}>
+        {assetsLoading ? <p className="text-[#98a2c3]">Loading property…</p>
+          : assetsError ? <p role="alert" className="text-amber-300">{assetsError} <button onClick={reload} className="underline">Retry</button></p>
+          : detail ? <AssetDetail asset={detail} listings={listings} loadingOffers={listingsLoading} offersError={listingsError} account={wallet} buying={buying} onBuy={reviewPurchase} onRetry={loadListings} reference={reference} />
+          : <div className="py-16 text-center"><h1 className="text-2xl font-bold mb-3 text-white">Property not found</h1><Link to="/marketplace" className="text-indigo-300">Back to the marketplace</Link></div>}
+        {selected && <BuyModal {...{ selected, buying, buyStep, txHash, buyError, handleBuy, formatMUSD, refUsd, gapOf, byToken }} onClose={() => setSelected(null)} />}
+      </div>
+    );
+  }
+
+  const loading = assetsLoading || listingsLoading;
+  const v = (x) => (loading ? "…" : x);
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <Navbar />
+    <div className={pageClass}>
+      {isInvestor ? (
+        <PageHeader
+          title="Buy property tokens"
+          subtitle="Own a share of real property. Compare prices with the approved value, pick a property and buy. Every purchase settles on the blockchain."
+          actions={<>
+            <ActionButton onClick={reload} icon={RefreshCw}>Refresh</ActionButton>
+            <ActionButton to="/marketplace/sell" icon={Tag}>Sell tokens</ActionButton>
+            <ActionButton to="/portfolio" primary icon={Wallet}>My portfolio</ActionButton>
+          </>}
+        />
+      ) : (
+        <PageHeader
+          title="Token marketplace"
+          subtitle="Trade fractional property tokens like shares. Prices move with every purchase, and every trade settles on the blockchain."
+          actions={<>
+            <ActionButton onClick={reload} icon={RefreshCw}>Refresh</ActionButton>
+            <ActionButton to="/marketplace/sell" primary icon={Tag}>Sell tokens</ActionButton>
+          </>}
+        />
+      )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
-              <ShoppingBag className="w-8 h-8 text-blue-500" />
-              Token Marketplace
-            </h1>
-            <p className="text-zinc-400 mt-1 text-sm sm:text-base">
-              Non-custodial, peer-to-peer trading of fractional real-world asset tokens with atomic ERC-20 settlement.
-            </p>
+      {isInvestor ? (() => {
+        const gaps = active.map((o) => gapOf(o.assetId, o.pricePerTokenFormatted)).filter((g) => g != null);
+        const below = gaps.filter((g) => g < -0.005).length;
+        const best = gaps.length ? Math.min(...gaps) : null;
+        const bestInfo = gapInfo(best);
+        return (
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+            <Stat label="Your cash" icon={Wallet} value={!wallet ? "—" : cash == null ? "…" : formatMUSD(cash)} note={wallet ? "Demo mUSD, ready to buy with" : "Connect a wallet to buy"} to="/portfolio" />
+            <Stat label="Properties for sale" icon={Building2} value={v(forSale.size)} note={loading ? "" : `of ${assets.length} tokenized`} />
+            <Stat label="Offers below approved" icon={Percent} value={v(below)} tone={below ? "up" : undefined} note="Cheaper than the official value" />
+            <Stat label="Best discount" icon={Store} value={v(best != null && best < 0 ? `${Math.abs(best * 100).toFixed(0)}%` : "None")} tone={best != null && best < 0 ? "up" : undefined} note={best != null && best < 0 ? bestInfo.label : "No offer under approved price"} />
           </div>
+        );
+      })() : (
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+          <Stat label="Properties for sale" icon={Building2} value={v(forSale.size)} note={loading ? "" : `of ${assets.length} tokenized`} />
+          <Stat label="Active offers" icon={Store} value={v(active.length)} />
+          <Stat label="Tokens on offer" icon={Layers} value={v(active.reduce((s, o) => s + Number(o.amount), 0).toLocaleString())} />
+          <Stat label="Your open offers" icon={Tag} value={v(myOffers.filter(isActiveOffer).length)} note={wallet ? "" : "Connect a wallet to sell"} />
+        </div>
+      )}
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-sm rounded-xl shadow-lg shadow-blue-500/20 transition-all cursor-pointer"
-            >
-              <PlusCircle className="w-4 h-4" />
-              List Tokens for Sale
-            </button>
+      {(assetsError || listingsError) && (
+        <p role="alert" className="text-sm text-amber-300 flex flex-wrap gap-2">{assetsError || listingsError}<button onClick={reload} className="underline">Retry</button></p>
+      )}
+
+      <div role="tablist" className="flex gap-1 border-b border-[#1b2440] overflow-x-auto">
+        {TABS.map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+            className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px ${tab === k ? "border-indigo-500 text-white" : "border-transparent text-[#98a2c3] hover:text-white"}`}>
+            {label}{k === "mine" && myOffers.filter(isActiveOffer).length ? <span className="ml-1.5 px-1.5 rounded bg-indigo-500/20 text-indigo-300 text-xs">{myOffers.filter(isActiveOffer).length}</span> : null}
+          </button>
+        ))}
+      </div>
+
+      {tab === "market" && (
+        <MarketWatch assets={assets} trades={market.trades} listings={known} reference={reference}
+          loading={assetsLoading || listingsLoading || market.trades == null} error={market.error} />
+      )}
+
+      {tab === "browse" && (isInvestor
+        ? <InvestorBrowse assets={assets} offers={active} reference={reference} trades={market.trades} loading={assetsLoading || listingsLoading} error={assetsError || listingsError} onRetry={reload} />
+        : assetsLoading ? <p className="text-[#98a2c3]">Loading properties…</p>
+          : <InvestorCatalog assets={assets} listings={known} loadingOffers={listingsLoading} offersError={listingsError} reference={reference} wallet={wallet} />
+      )}
+
+      {tab === "deals" && <BestDeals assets={assets} offers={active} reference={reference} loading={assetsLoading || listingsLoading} />}
+
+      {tab === "purchases" && <MyPurchases wallet={wallet} trades={trades} error={tradesError} loading={assetsLoading} />}
+
+      {tab === "offers" && (
+        <OffersTable offers={active} byToken={byToken} wallet={wallet} loading={listingsLoading} formatMUSD={formatMUSD} gapOf={gapOf}
+          empty="No active sale offers right now."
+          action={(o) => mineFilter(o) ? <button onClick={() => setTab("mine")} className="text-xs font-semibold text-indigo-300 hover:text-indigo-200 whitespace-nowrap">Your offer · manage</button>
+            : <button onClick={() => navigate(`/marketplace/assets/${byToken.get(Number(o.assetId)).assetId}`)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold">Buy</button>} />
+      )}
+
+      {tab === "mine" && (
+        <MySales {...{ wallet, holdings, active, myOffers, trades, tradesError, byToken, formatMUSD, mineFilter, cancelError }}
+          loading={assetsLoading || listingsLoading}
+          cancelAction={(o) => !isActiveOffer(o) ? null : confirmCancel === o.listingId ? (
+            <span className="flex gap-2 justify-end">
+              <button onClick={() => handleCancel(o.listingId)} disabled={cancelling === o.listingId} className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold disabled:opacity-50">{cancelling === o.listingId ? "Stopping…" : "Yes, stop"}</button>
+              <button onClick={() => setConfirmCancel(null)} className="px-3 py-1.5 rounded-lg border border-[#1b2440] text-xs text-[#c3cae2]">Keep</button>
+            </span>
+          ) : <button onClick={() => setConfirmCancel(o.listingId)} className="px-3 py-1.5 rounded-lg border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 text-xs font-semibold whitespace-nowrap">Stop selling</button>} />
+      )}
+
+      {selected && <BuyModal {...{ selected, buying, buyStep, txHash, buyError, handleBuy, formatMUSD, refUsd, gapOf, byToken }} onClose={() => setSelected(null)} />}
+    </div>
+  );
+}
+
+function offerStatus(o, sold = 0) {
+  if (o.status === 1) return ["Sold out", "good"];
+  if (o.status === 2) return [sold ? "Stopped · part sold" : "Stopped", "muted"];
+  if (!isActiveOffer(o)) return [sold ? "Expired · part sold" : "Expired", "warn"];
+  return sold ? ["Partly sold", "good"] : ["For sale", "good"];
+}
+
+const short = (addr) => (addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : "—");
+const th = "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#98a2c3] whitespace-nowrap";
+const td = "px-4 py-3 whitespace-nowrap";
+
+// Everything a seller needs in one place: how selling works, what they can sell,
+// each offer's progress (listed → sold → left) and every completed sale.
+function MySales({ wallet, holdings, active, myOffers, trades, tradesError, loading, byToken, formatMUSD, mineFilter, cancelError, cancelAction }) {
+  if (!wallet) {
+    return <section className={`${cardClass} p-6`}><p className="text-[#98a2c3]">Connect your wallet to see and manage your sales.</p></section>;
+  }
+
+  const sales = (trades || []).filter((t) => t.side === "Sold");
+  const soldBy = new Map();
+  for (const s of sales) {
+    const cur = soldBy.get(s.listingId) || { tokens: 0, received: 0 };
+    soldBy.set(s.listingId, { tokens: cur.tokens + s.amount, received: cur.received + (s.received || 0) });
+  }
+  const offers = [...myOffers].sort((a, b) => Number(isActiveOffer(b)) - Number(isActiveOffer(a)) || b.listingId - a.listingId);
+  const openOffers = offers.filter(isActiveOffer);
+  const tokensForSale = openOffers.reduce((s, o) => s + Number(o.amount), 0);
+  const tokensSold = sales.reduce((s, t) => s + t.amount, 0);
+  const earned = sales.reduce((s, t) => s + (t.received || 0), 0);
+  const tradesLoading = trades == null;
+  const v = (x, wait = loading) => (wait ? "…" : x);
+
+  return (
+    <div className="space-y-6">
+      <section className={`${cardClass} p-5 sm:p-6`}>
+        <h2 className="text-lg font-bold text-white mb-4">How selling works</h2>
+        <ol className="grid sm:grid-cols-3 gap-3">
+          {[
+            ["List your tokens", "Pick a property, choose how many tokens and your price. The tokens stay in your wallet."],
+            ["Buyers see your offer", "It appears under “Buy tokens” and on the property page. Buyers can take all or part of it."],
+            ["You get paid automatically", "When someone buys, mUSD (minus the platform fee) arrives in your wallet and the tokens move to the buyer."],
+          ].map(([title, text], i) => (
+            <li key={title} className="rounded-xl border border-[#1b2440] bg-[#0e1426] p-4 flex gap-3">
+              <span className="w-7 h-7 shrink-0 rounded-full bg-indigo-500/20 text-indigo-300 text-sm font-bold flex items-center justify-center">{i + 1}</span>
+              <span><span className="block font-semibold text-white">{title}</span><span className="block text-sm text-[#98a2c3] mt-0.5">{text}</span></span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+        <Stat label="Open offers" icon={Store} value={v(openOffers.length)} />
+        <Stat label="Tokens for sale now" icon={Layers} value={v(tokensForSale.toLocaleString())} />
+        <Stat label="Tokens sold" icon={Tag} value={v(tokensSold.toLocaleString(), tradesLoading)} />
+        <Stat label="You earned" icon={Coins} value={v(formatMUSD(earned), tradesLoading)} note="after platform fee" />
+      </div>
+
+      <section className={`${cardClass} p-5 sm:p-6`}>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-white">1. Tokens you can sell</h2>
+            <p className="text-sm text-[#98a2c3]">Tokens in your wallet that aren't already in an open offer.</p>
+          </div>
+          <ActionButton to="/marketplace/sell" primary icon={Tag}>Sell tokens</ActionButton>
+        </div>
+        {loading ? <p className="text-sm text-[#98a2c3]">Reading your balances…</p>
+          : !holdings.length ? <p className="text-sm text-[#98a2c3]">Your wallet doesn't hold any property tokens yet. Buy some under “Buy tokens” first.</p>
+          : (
+            <ul className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {holdings.map((a) => {
+                const held = a.ownership.viewerBalance;
+                const offered = active.filter((o) => mineFilter(o) && Number(o.assetId) === Number(a.tokenId)).reduce((s, o) => s + Number(o.amount), 0);
+                const free = Math.max(0, held - offered);
+                return (
+                  <li key={a.tokenId} className="rounded-xl border border-[#1b2440] bg-[#0e1426] p-4 space-y-3">
+                    <span className="block font-semibold text-white truncate">{a.name}</span>
+                    <dl className="grid grid-cols-3 gap-2 text-center text-sm">
+                      <div><dt className="text-[11px] text-[#6b7599]">You hold</dt><dd className="font-semibold text-white">{held.toLocaleString()}</dd></div>
+                      <div><dt className="text-[11px] text-[#6b7599]">For sale</dt><dd className="font-semibold text-amber-300">{offered.toLocaleString()}</dd></div>
+                      <div><dt className="text-[11px] text-[#6b7599]">Free to sell</dt><dd className="font-semibold text-emerald-300">{free.toLocaleString()}</dd></div>
+                    </dl>
+                    {free > 0
+                      ? <Link to={`/marketplace/sell?asset=${a.tokenId}`} className="block text-center rounded-lg bg-indigo-600 hover:bg-indigo-500 py-2 text-sm font-semibold text-white">Sell these tokens</Link>
+                      : <p className="text-center text-xs text-[#98a2c3] py-2">All your tokens are already for sale.</p>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+      </section>
+
+      <section className={`${cardClass} overflow-hidden`}>
+        <div className="px-5 sm:px-6 pt-5">
+          <h2 className="text-lg font-bold text-white">2. Your sale offers</h2>
+          <p className="text-sm text-[#98a2c3]">Each offer shows how many tokens you listed, how many have sold and how many are still for sale.</p>
+        </div>
+        {cancelError && <p role="alert" className="mx-5 sm:mx-6 mt-3 text-sm text-rose-300">{cancelError}</p>}
+        {loading ? <p className="p-6 text-[#98a2c3]">Loading offers…</p>
+          : !offers.length ? <p className="p-6 text-[#98a2c3]">You haven't listed any tokens yet. Use “Sell these tokens” above to create your first offer.</p>
+          : (
+            <div className="overflow-x-auto mt-3">
+              <table className="w-full text-sm min-w-[860px]">
+                <thead className="border-b border-[#1b2440]"><tr>
+                  <th className={th}>Property</th><th className={`${th} text-right`}>Price / token</th>
+                  <th className={`${th} text-right`}>Listed</th><th className={`${th} text-right`}>Sold</th><th className={`${th} text-right`}>Still for sale</th>
+                  <th className={`${th} text-right`}>You earned</th><th className={th}>Status</th><th className={th}>Ends</th><th className={th}><span className="sr-only">Action</span></th>
+                </tr></thead>
+                <tbody>
+                  {offers.map((o) => {
+                    const sold = soldBy.get(o.listingId) || { tokens: 0, received: 0 };
+                    const live = isActiveOffer(o);
+                    const left = live ? Number(o.amount) : 0;
+                    const listed = Number(o.amount) + sold.tokens;
+                    const [label, tone] = offerStatus(o, sold.tokens);
+                    return (
+                      <tr key={o.listingId} className="border-b border-[#1b2440] last:border-0 hover:bg-[#0e1426]">
+                        <td className={td}><span className="block font-semibold text-white">{byToken.get(Number(o.assetId))?.name || `Token #${o.assetId}`}</span><span className="block text-xs text-[#6b7599]">Offer #{o.listingId}</span></td>
+                        <td className={`${td} text-right text-white`}>{formatMUSD(o.pricePerTokenFormatted)}</td>
+                        <td className={`${td} text-right text-white`}>{tradesLoading ? "…" : listed.toLocaleString()}</td>
+                        <td className={`${td} text-right text-emerald-300 font-semibold`}>{tradesLoading ? "…" : sold.tokens.toLocaleString()}</td>
+                        <td className={`${td} text-right ${left ? "text-amber-300 font-semibold" : "text-[#6b7599]"}`}>{left.toLocaleString()}</td>
+                        <td className={`${td} text-right text-white`}>{tradesLoading ? "…" : formatMUSD(sold.received)}</td>
+                        <td className={td}><Badge tone={tone}>{label}</Badge></td>
+                        <td className={`${td} text-[#c3cae2]`}>{!live ? "—" : o.expiresAt ? fmtDate(o.expiresAt * 1000) : "No end date"}</td>
+                        <td className={`${td} text-right`}>{cancelAction(o)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        <p className="px-5 sm:px-6 py-4 text-xs text-[#6b7599]">“Stop selling” removes the unsold part of an offer. Tokens already sold stay sold.</p>
+      </section>
+
+      <section className={`${cardClass} overflow-hidden`}>
+        <div className="px-5 sm:px-6 pt-5">
+          <h2 className="text-lg font-bold text-white">3. Completed sales</h2>
+          <p className="text-sm text-[#98a2c3]">Every purchase of your tokens, read from the blockchain.</p>
+        </div>
+        {tradesError && <p role="alert" className="mx-5 sm:mx-6 mt-3 text-sm text-amber-300">{tradesError}</p>}
+        {tradesLoading ? <p className="p-6 text-[#98a2c3]">Loading sales…</p>
+          : !sales.length ? <p className="p-6 text-[#98a2c3]">No one has bought your tokens yet.</p>
+          : (
+            <div className="overflow-x-auto mt-3">
+              <table className="w-full text-sm min-w-[720px]">
+                <thead className="border-b border-[#1b2440]"><tr>
+                  <th className={th}>Date</th><th className={th}>Property</th><th className={`${th} text-right`}>Tokens</th>
+                  <th className={`${th} text-right`}>Price / token</th><th className={`${th} text-right`}>You received</th><th className={th}>Buyer</th><th className={th}>Transaction</th>
+                </tr></thead>
+                <tbody>
+                  {sales.map((s) => (
+                    <tr key={`${s.txHash}-${s.listingId}`} className="border-b border-[#1b2440] last:border-0 hover:bg-[#0e1426]">
+                      <td className={`${td} text-[#c3cae2]`}>{s.at.toLocaleString()}</td>
+                      <td className={td}><span className="block font-semibold text-white">{s.name}</span><span className="block text-xs text-[#6b7599]">Offer #{s.listingId}</span></td>
+                      <td className={`${td} text-right text-white`}>{s.amount.toLocaleString()}</td>
+                      <td className={`${td} text-right text-[#c3cae2]`}>{formatMUSD(s.amount ? s.total / s.amount : 0)}</td>
+                      <td className={`${td} text-right text-emerald-300 font-semibold`}>{formatMUSD(s.received)}</td>
+                      <td className={`${td} font-mono text-xs text-[#98a2c3]`}>{short(s.buyer)}</td>
+                      <td className={`${td} font-mono text-xs text-[#6b7599]`} title={s.txHash}>{short(s.txHash)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </section>
+    </div>
+  );
+}
+
+function OffersTable({ offers, byToken, wallet, loading, formatMUSD, gapOf, action, empty, title, showStatus }) {
+  return (
+    <section className={`${cardClass} overflow-hidden`}>
+      {title && <h2 className="px-5 sm:px-6 pt-5 text-lg font-bold text-white">{title}</h2>}
+      {loading ? <p className="p-6 text-[#98a2c3]">Loading offers…</p> : !offers.length ? <p className="p-6 text-[#98a2c3]">{empty}</p> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[720px]">
+            <thead>
+              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-[#98a2c3] border-b border-[#1b2440]">
+                <th className="px-5 py-3.5">Property</th>
+                <th className="px-5 py-3.5 text-right">Tokens</th>
+                <th className="px-5 py-3.5 text-right">Price / token</th>
+                <th className="px-5 py-3.5 text-right">vs approved value</th>
+                <th className="px-5 py-3.5 text-right">Total</th>
+                {showStatus ? <th className="px-5 py-3.5">Status</th> : <th className="px-5 py-3.5">Seller</th>}
+                <th className="px-5 py-3.5">Expires</th>
+                <th className="px-5 py-3.5 text-right relative"><span className="sr-only">Action</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {offers.map((o) => {
+                const a = byToken.get(Number(o.assetId));
+                const gap = gapOf(o.assetId, o.pricePerTokenFormatted);
+                const [label, tone] = offerStatus(o);
+                return (
+                  <tr key={o.listingId} className="border-b border-[#1b2440] last:border-0 hover:bg-[#0e1426]">
+                    <td className="px-5 py-3.5">
+                      <span className="block font-semibold text-white">{a?.name || `Token #${o.assetId}`}</span>
+                      <span className="block text-xs text-[#6b7599]">Offer #{o.listingId} · token #{o.assetId}</span>
+                    </td>
+                    <td className="px-5 py-3.5 text-right text-white">{Number(o.amount).toLocaleString()}<span className="block text-xs text-[#6b7599]">{a ? `${((o.amount / a.totalShares) * 100).toFixed(2)}%` : ""}</span></td>
+                    <td className="px-5 py-3.5 text-right text-white font-semibold whitespace-nowrap">{formatMUSD(o.pricePerTokenFormatted)}</td>
+                    <td className={`px-5 py-3.5 text-right whitespace-nowrap ${gap == null ? "text-[#6b7599]" : Math.abs(gap) > PRICE_WARNING_RATIO ? "text-amber-300" : "text-[#c3cae2]"}`}>
+                      {gap == null ? "—" : `${gap > 0 ? "+" : ""}${(gap * 100).toFixed(0)}%`}
+                    </td>
+                    <td className="px-5 py-3.5 text-right text-white whitespace-nowrap">{formatMUSD(o.amount * o.pricePerTokenFormatted)}</td>
+                    {showStatus
+                      ? <td className="px-5 py-3.5"><Badge tone={tone}>{label}</Badge></td>
+                      : <td className="px-5 py-3.5"><SellerTag kind={sellerKind(o, a?.ownerWallet)} mine={Boolean(wallet && o.seller.toLowerCase() === wallet)} /><span className="block mt-1 font-mono text-xs text-[#98a2c3]">{o.seller.slice(0, 6)}…{o.seller.slice(-4)}</span></td>}
+                    <td className="px-5 py-3.5 text-[#c3cae2] whitespace-nowrap">{o.expiresAt ? fmtDate(o.expiresAt * 1000) : "No expiry"}</td>
+                    <td className="px-5 py-3.5 text-right">{action(o)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BuyModal({ selected, buying, buyStep, txHash, buyError, handleBuy, formatMUSD, refUsd, gapOf, byToken, onClose }) {
+  const name = byToken.get(Number(selected.assetId))?.name || selected.assetName;
+  const total = selected.amount * selected.pricePerTokenFormatted;
+  const ref = refUsd(selected.assetId);
+  const gap = gapOf(selected.assetId, selected.pricePerTokenFormatted);
+  const high = gap != null && gap > PRICE_WARNING_RATIO;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Buy tokens">
+      <div className={`${cardClass} w-full max-w-md p-6 space-y-4 relative`}>
+        {!buying && <button onClick={onClose} className="absolute top-4 right-4 text-[#98a2c3] hover:text-white" aria-label="Close"><X className="w-5 h-5" /></button>}
+        <div className="flex items-center gap-3">
+          <span className="w-11 h-11 rounded-xl bg-indigo-500/15 text-indigo-300 flex items-center justify-center">{buyStep === "done" ? <CheckCircle2 className="w-6 h-6 text-emerald-400" /> : <Coins className="w-6 h-6" />}</span>
+          <div>
+            <h3 className="text-lg font-bold text-white">{buyStep === "done" ? "Tokens purchased" : buying ? "Processing purchase" : "Review purchase"}</h3>
+            <p className="text-sm text-[#98a2c3]">{name} · offer #{selected.listingId}</p>
           </div>
         </div>
-
-        {/* Listings Grid */}
-        {loading ? (
-          <div className="flex items-center justify-center py-20 text-zinc-500">
-            <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mr-3"></div>
-            Loading marketplace orders...
-          </div>
-        ) : listings.length === 0 ? (
-          <div className="text-center py-16 bg-zinc-900/50 rounded-2xl border border-zinc-800">
-            <ShoppingBag className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
-            <h3 className="text-lg font-semibold text-zinc-300">No active listings available</h3>
-            <p className="text-zinc-500 text-sm mt-1 max-w-md mx-auto">
-              Be the first investor to list fractional shares on the secondary marketplace.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {listings.map((item) => {
-              const isSeller = account && item.seller.toLowerCase() === account.toLowerCase();
-              const isExpired = item.expiresAt > 0 && item.expiresAt < Date.now() / 1000;
-              const totalPrice = item.amount * item.pricePerTokenFormatted;
-              const platformFee = (totalPrice * 0.01).toFixed(2);
-
-              return (
-                <div
-                  key={item.listingId}
-                  className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl hover:border-zinc-700 transition-all flex flex-col justify-between"
-                >
-                  <div>
-                    {/* Top Tag & Status */}
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full text-xs font-semibold">
-                        Asset #{item.assetId} — {item.assetName || "Real Estate Asset"}
-                      </span>
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          item.status === 0
-                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                            : item.status === 1
-                            ? "bg-zinc-800 text-zinc-400"
-                            : "bg-rose-500/10 text-rose-400"
-                        }`}
-                      >
-                        {item.statusLabel}
-                      </span>
-                    </div>
-
-                    {/* Listing Title */}
-                    <h3 className="text-xl font-bold text-white mb-2">
-                      {item.amount.toLocaleString()} Fractional Shares
-                    </h3>
-                    <p className="text-xs text-zinc-400 font-mono mb-4">
-                      Seller: {item.seller.slice(0, 8)}...{item.seller.slice(-6)}
-                      {isSeller && <span className="ml-2 text-blue-400 font-sans font-medium">(You)</span>}
-                    </p>
-
-                    {/* Pricing Box */}
-                    <div className="bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-4 mb-4 space-y-2 text-sm">
-                      <div className="flex justify-between text-zinc-400">
-                        <span>Price per token:</span>
-                        <div className="text-right">
-                          <span className="font-semibold text-white">{item.pricePerTokenFormatted} mUSD</span>
-                          {currency !== "USD" && (
-                            <span className="block text-[11px] text-zinc-400 font-mono">
-                              ≈ {formatMUSD(item.pricePerTokenFormatted)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-zinc-400">
-                        <span>Platform fee (1%):</span>
-                        <span className="text-zinc-300">{platformFee} mUSD</span>
-                      </div>
-                      <div className="border-t border-zinc-800 pt-2 flex justify-between font-bold text-white items-baseline">
-                        <span>Total Cost:</span>
-                        <div className="text-right">
-                          <span className="text-emerald-400 text-base">{totalPrice.toLocaleString()} mUSD</span>
-                          {currency !== "USD" && (
-                            <span className="block text-xs text-emerald-400/80 font-normal font-mono">
-                              ≈ {formatMUSD(totalPrice)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="pt-2">
-                    {item.status === 0 && !isExpired && (
-                      isSeller ? (
-                        <div className="space-y-2">
-                          <div className="text-[11px] text-zinc-400 bg-zinc-950/70 p-2.5 rounded-xl border border-zinc-800 text-center space-y-1">
-                            <span className="text-zinc-300">You are the seller of this listing.</span>
-                            <div className="text-xs">
-                              <button
-                                onClick={handleSwitchWallet}
-                                className="text-blue-400 hover:text-blue-300 underline font-semibold cursor-pointer"
-                              >
-                                Switch to Buyer / Investor Account →
-                              </button>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleCancelListing(item.listingId)}
-                            className="w-full py-2 bg-zinc-800/80 hover:bg-zinc-700 text-rose-400 border border-zinc-700 font-medium text-xs rounded-xl transition-all cursor-pointer"
-                          >
-                            Cancel Listing
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setSelectedListing(item);
-                            handleBuy(item);
-                          }}
-                          disabled={buying}
-                          className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm rounded-xl shadow-lg shadow-blue-500/20 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                          <Coins className="w-4 h-4" />
-                          Buy with mUSD
-                        </button>
-                      )
-                    )}
-
-                    {item.status === 1 && (
-                      <div className="text-center py-2 text-xs text-zinc-500 font-medium">
-                        ✓ Completed & Settled Atomically
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        <dl className="rounded-xl border border-[#1b2440] bg-[#0e1426] p-4 space-y-2 text-sm">
+          <div className="flex justify-between"><dt className="text-[#98a2c3]">Tokens</dt><dd className="text-white font-semibold">{selected.amount.toLocaleString()}</dd></div>
+          <div className="flex justify-between"><dt className="text-[#98a2c3]">Price per token</dt><dd className="text-white">{formatMUSD(selected.pricePerTokenFormatted, { showCode: true })}</dd></div>
+          {ref != null && <div className="flex justify-between"><dt className="text-[#98a2c3]">Approved value per token</dt><dd className="text-white">{formatMUSD(ref, { showCode: true })}</dd></div>}
+          <div className="flex justify-between border-t border-[#1b2440] pt-2"><dt className="text-white font-semibold">You pay</dt><dd className="text-emerald-300 font-bold">{formatMUSD(total, { showCode: true })}</dd></div>
+        </dl>
+        {high && <p className="text-xs rounded-xl p-3 border border-amber-500/40 bg-amber-500/5 text-amber-200 flex gap-2"><AlertTriangle className="w-4 h-4 shrink-0" />This price is {(gap * 100).toFixed(0)}% above the property's approved value.</p>}
+        {buying && (
+          <ol className="space-y-2 text-sm rounded-xl border border-[#1b2440] bg-[#0e1426] p-3.5 text-[#c3cae2]">
+            <li className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${buyStep === "approving" ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />Allow the mUSD payment</li>
+            <li className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${buyStep === "purchasing" ? "bg-amber-400 animate-pulse" : "bg-[#29345a]"}`} />Swap payment and tokens on-chain</li>
+          </ol>
         )}
-
-        {/* Buy Flow Modal / Status Overlay */}
-        {selectedListing && buying && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-6 text-center space-y-4">
-              <div className="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 mx-auto flex items-center justify-center">
-                <Coins className="w-6 h-6 animate-pulse" />
-              </div>
-              <h3 className="text-lg font-bold text-white">Processing Purchase</h3>
-              <p className="text-xs text-zinc-400">
-                Purchasing {selectedListing.amount} tokens for {(selectedListing.amount * selectedListing.pricePerTokenFormatted).toLocaleString()} mUSD
-              </p>
-
-              <div className="space-y-2 text-left bg-zinc-950 p-4 rounded-xl border border-zinc-800 text-xs">
-                <div className="flex items-center gap-2 text-zinc-300">
-                  <div className={`w-2 h-2 rounded-full ${buyStep === "approving" ? "bg-amber-400 animate-ping" : "bg-emerald-400"}`}></div>
-                  1. Approve mUSD Payment Tokens
-                </div>
-                <div className="flex items-center gap-2 text-zinc-300">
-                  <div className={`w-2 h-2 rounded-full ${buyStep === "purchasing" ? "bg-amber-400 animate-ping" : buyStep === "done" ? "bg-emerald-400" : "bg-zinc-600"}`}></div>
-                  2. Settle Token & Payment Swap Atomically
-                </div>
-              </div>
-
-              {errorMsg && (
-                <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl">
-                  {errorMsg}
-                </div>
-              )}
-
-              {buyStep === "done" && (
-                <button
-                  onClick={() => setSelectedListing(null)}
-                  className="w-full py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium"
-                >
-                  Close
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Create Listing Modal */}
-        {showCreateModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="absolute top-4 right-4 text-zinc-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <h2 className="text-xl font-bold text-white mb-2">Create Non-Custodial Listing</h2>
-              <p className="text-xs text-zinc-400 mb-6">
-                Your fractional shares remain in your wallet until a buyer completes the atomic purchase.
-              </p>
-
-              <form onSubmit={handleCreateListing} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                    Select Tokenized Asset
-                  </label>
-                  <select
-                    value={assetId}
-                    onChange={(e) => setAssetId(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value={1}>Asset #1: Colombo Oceanfront Residence (1,000 Total Shares)</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                      Token Quantity
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={sellAmount}
-                      onChange={(e) => setSellAmount(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                      Price per Token (mUSD)
-                    </label>
-                    <input
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={sellPrice}
-                      onChange={(e) => setSellPrice(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                    Listing Duration (Days)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="90"
-                    value={durationDays}
-                    onChange={(e) => setDurationDays(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                {/* Summary Box */}
-                <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 text-xs space-y-1.5 text-zinc-400">
-                  <div className="flex justify-between">
-                    <span>Gross Proceeds:</span>
-                    <span className="font-semibold text-white">{(sellAmount * sellPrice).toLocaleString()} mUSD</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Platform Trading Fee (1%):</span>
-                    <span className="text-zinc-300">{(sellAmount * sellPrice * 0.01).toFixed(2)} mUSD</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-white border-t border-zinc-800 pt-1.5 items-baseline">
-                    <span>Net Expected to Seller:</span>
-                    <div className="text-right">
-                      <span className="text-emerald-400">{(sellAmount * sellPrice * 0.99).toFixed(2)} mUSD</span>
-                      {currency !== "USD" && (
-                        <span className="block text-[11px] text-zinc-400 font-mono font-normal">
-                          ≈ {formatMUSD(sellAmount * sellPrice * 0.99)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {errorMsg && (
-                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl">
-                    {errorMsg}
-                  </div>
-                )}
-
-                <div className="pt-2 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium rounded-xl transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={creating}
-                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl shadow-lg shadow-blue-500/20 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {creating ? "Submitting Listing..." : "Confirm & List"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-      </main>
+        {buyError && <p role="alert" className="text-sm text-rose-300">{buyError}</p>}
+        {buyStep === "done" && <p role="status" className="text-xs text-emerald-300 break-all">Tokens are in your wallet. Transaction {txHash}</p>}
+        {!buying && buyStep !== "done" && <button onClick={() => handleBuy(selected)} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">Confirm with wallet</button>}
+        {!buying && <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-[#1b2440] text-[#c3cae2] hover:bg-[#141c33] text-sm font-semibold">{buyStep === "done" ? "Done" : "Cancel"}</button>}
+        <p className="text-xs text-[#6b7599]">Payment uses demo mUSD tokens. Network gas is paid separately in ETH.</p>
+      </div>
     </div>
   );
 }

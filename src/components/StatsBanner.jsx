@@ -19,12 +19,12 @@ export default function StatsBanner({ stats }) {
             <h3 className="text-2xl font-bold text-white mt-1">
               {formatLKR(valuation, { compact: true })}
             </h3>
-            <p className="text-[11px] text-[#00E5FF] mt-1 flex items-center gap-1 font-medium">
+            <p className="text-[11px] text-[#22e07a] mt-1 flex items-center gap-1 font-medium">
               <span>●</span> Real-World Asset Backed
             </p>
           </div>
-          <div className="h-12 w-12 rounded-xl bg-[#4F46E5]/15 border border-[#4F46E5]/30 flex items-center justify-center text-[#4F46E5]">
-            <Building2 className="w-6 h-6 text-[#00E5FF]" />
+          <div className="h-12 w-12 rounded-xl bg-[#16a34a]/15 border border-[#16a34a]/30 flex items-center justify-center text-[#16a34a]">
+            <Building2 className="w-6 h-6 text-[#22e07a]" />
           </div>
         </div>
       </div>
@@ -37,11 +37,11 @@ export default function StatsBanner({ stats }) {
             <h3 className="text-2xl font-bold text-white mt-1">
               {totalTokens.toLocaleString()} Units
             </h3>
-            <p className="text-[11px] text-[#00E5FF] mt-1 flex items-center gap-1 font-medium">
+            <p className="text-[11px] text-[#22e07a] mt-1 flex items-center gap-1 font-medium">
               <span>●</span> Divisible Fractional Ownership
             </p>
           </div>
-          <div className="h-12 w-12 rounded-xl bg-[#00E5FF]/10 border border-[#00E5FF]/25 flex items-center justify-center text-[#00E5FF]">
+          <div className="h-12 w-12 rounded-xl bg-[#22e07a]/10 border border-[#22e07a]/25 flex items-center justify-center text-[#22e07a]">
             <Coins className="w-6 h-6" />
           </div>
         </div>
@@ -59,7 +59,7 @@ export default function StatsBanner({ stats }) {
               <span>●</span> {tokenizedCount} Tokenized on Blockchain
             </p>
           </div>
-          <div className="h-12 w-12 rounded-xl bg-[#4F46E5]/15 border border-[#4F46E5]/30 flex items-center justify-center text-[#4F46E5]">
+          <div className="h-12 w-12 rounded-xl bg-[#16a34a]/15 border border-[#16a34a]/30 flex items-center justify-center text-[#16a34a]">
             <CheckCircle2 className="w-6 h-6" />
           </div>
         </div>
@@ -73,11 +73,11 @@ export default function StatsBanner({ stats }) {
             <h3 className="text-2xl font-bold text-white mt-1">
               SHA-256 + IPFS
             </h3>
-            <p className="text-[11px] text-[#00E5FF] mt-1 flex items-center gap-1 font-medium">
+            <p className="text-[11px] text-[#22e07a] mt-1 flex items-center gap-1 font-medium">
               <span>●</span> Verifiable Legal Integrity
             </p>
           </div>
-          <div className="h-12 w-12 rounded-xl bg-[#00E5FF]/10 border border-[#00E5FF]/25 flex items-center justify-center text-[#00E5FF]">
+          <div className="h-12 w-12 rounded-xl bg-[#22e07a]/10 border border-[#22e07a]/25 flex items-center justify-center text-[#22e07a]">
             <FileKey2 className="w-6 h-6" />
           </div>
         </div>

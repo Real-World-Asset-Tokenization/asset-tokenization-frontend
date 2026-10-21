@@ -185,7 +185,7 @@ export default function TransferModal({
             <button
               type="submit"
               disabled={isTransferring || currentShares === 0}
-              className="w-full py-3.5 rounded-2xl bg-[#4F46E5] hover:bg-[#4338CA] text-white font-bold text-sm shadow-lg shadow-[#4F46E5]/40 transition-all cursor-pointer disabled:opacity-50"
+              className="w-full py-3.5 rounded-2xl bg-[#16a34a] hover:bg-[#15803d] text-white font-bold text-sm shadow-lg shadow-[#16a34a]/40 transition-all cursor-pointer disabled:opacity-50"
             >
               {isTransferring ? "Executing Transfer on Blockchain..." : "Confirm & Transfer Shares"}
             </button>

@@ -19,7 +19,7 @@ export default function TeammatesHubModal({ onClose }) {
         <div className="flex items-center justify-between p-6 border-b border-[#94A3BB]/15">
           <div>
             <h2 className="text-xl font-bold text-[#FFFFFF] flex items-center gap-2">
-              <Code2 className="w-5 h-5 text-[#00E5FF]" />
+              <Code2 className="w-5 h-5 text-[#22e07a]" />
               Teammate Integration Hub & Interface Specifications
             </h2>
             <p className="text-xs text-[#94A3BB] mt-0.5">
@@ -39,35 +39,35 @@ export default function TeammatesHubModal({ onClose }) {
           {/* Contract Addresses */}
           <div>
             <h3 className="text-xs font-semibold text-[#FFFFFF] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <Layers className="w-4 h-4 text-[#00E5FF]" />
+              <Layers className="w-4 h-4 text-[#22e07a]" />
               1. Deployed Smart Contract Addresses (Localhost 31337)
             </h3>
             <div className="space-y-2">
               <div className="p-3 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-[#94A3BB] font-medium">AssetToken (ERC-1155 Fractional Shares):</p>
-                  <p className="text-xs font-mono text-[#00E5FF] mt-0.5">{tokenAddress}</p>
+                  <p className="text-xs font-mono text-[#22e07a] mt-0.5">{tokenAddress}</p>
                 </div>
                 <button
                   onClick={() => copyToClipboard(tokenAddress, "token")}
                   className="p-2 rounded-lg bg-[#050816] hover:bg-[#0E1535] text-[#94A3BB] hover:text-[#FFFFFF] border border-[#94A3BB]/20 transition-all cursor-pointer"
                   title="Copy Address"
                 >
-                  {copiedKey === "token" ? <Check className="w-4 h-4 text-[#00E5FF]" /> : <Copy className="w-4 h-4" />}
+                  {copiedKey === "token" ? <Check className="w-4 h-4 text-[#22e07a]" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
 
               <div className="p-3 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-[#94A3BB] font-medium">AssetRegistry (Onboarding & Deed Hash):</p>
-                  <p className="text-xs font-mono text-[#4F46E5] mt-0.5">{registryAddress}</p>
+                  <p className="text-xs font-mono text-[#16a34a] mt-0.5">{registryAddress}</p>
                 </div>
                 <button
                   onClick={() => copyToClipboard(registryAddress, "registry")}
                   className="p-2 rounded-lg bg-[#050816] hover:bg-[#0E1535] text-[#94A3BB] hover:text-[#FFFFFF] border border-[#94A3BB]/20 transition-all cursor-pointer"
                   title="Copy Address"
                 >
-                  {copiedKey === "registry" ? <Check className="w-4 h-4 text-[#00E5FF]" /> : <Copy className="w-4 h-4" />}
+                  {copiedKey === "registry" ? <Check className="w-4 h-4 text-[#22e07a]" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -76,7 +76,7 @@ export default function TeammatesHubModal({ onClose }) {
           {/* Module 1: Marketplace Integration */}
           <div className="p-4 rounded-2xl bg-[#090D22] border border-[#94A3BB]/20 space-y-2">
             <h4 className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#00E5FF]" />
+              <span className="w-2 h-2 rounded-full bg-[#22e07a]" />
               For Marketplace Teammate (Trading Fractional Shares)
             </h4>
             <p className="text-xs text-[#94A3BB]">
@@ -95,7 +95,7 @@ assetToken.safeTransferFrom(seller, buyer, assetId, amountBought, "");`}</code>
           {/* Module 2: Governance Integration */}
           <div className="p-4 rounded-2xl bg-[#090D22] border border-[#94A3BB]/20 space-y-2">
             <h4 className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#4F46E5]" />
+              <span className="w-2 h-2 rounded-full bg-[#16a34a]" />
               For Governance Teammate (Voting & Snapshots)
             </h4>
             <p className="text-xs text-[#94A3BB]">
@@ -114,7 +114,7 @@ require(votingPower > 0, "No voting weight at snapshot");`}</code>
           {/* Module 3: Profit Distribution Integration */}
           <div className="p-4 rounded-2xl bg-[#090D22] border border-[#94A3BB]/20 space-y-2">
             <h4 className="text-sm font-bold text-[#FFFFFF] flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#00E5FF]" />
+              <span className="w-2 h-2 rounded-full bg-[#22e07a]" />
               For Profit Distribution Teammate (Rental Yield & Dividends)
             </h4>
             <p className="text-xs text-[#94A3BB]">
@@ -133,7 +133,7 @@ uint256 payout = (distributableProfit * investorShares) / totalShares;`}</code>
         {/* Footer */}
         <div className="p-6 border-t border-[#94A3BB]/15 bg-[#050816]/70 flex items-center justify-between">
           <p className="text-xs text-[#94A3BB]">
-            Interface files: <span className="font-mono text-[#00E5FF]">blockchain/contracts/interfaces/</span>
+            Interface files: <span className="font-mono text-[#22e07a]">blockchain/contracts/interfaces/</span>
           </p>
           <button
             onClick={onClose}

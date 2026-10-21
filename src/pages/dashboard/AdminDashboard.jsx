@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useCurrency } from '../../context/CurrencyContext';
 import { authAPI, kycAPI } from '../../lib/api';
 import Navbar from '../../components/Navbar';
 import { ShieldCheck, Users, Building, Coins, Flame, ArrowUpRight } from 'lucide-react';
 
 export default function AdminDashboard() {
+  // ?q= from the workspace search box filters users and assets by name/email.
+  const [searchParams] = useSearchParams();
+  const q = (searchParams.get('q') || '').trim().toLowerCase();
+  const matches = (...vals) => !q || vals.some((v) => String(v || '').toLowerCase().includes(q));
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { format } = useCurrency();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -118,7 +124,7 @@ export default function AdminDashboard() {
 
     setAssetUpdating(true);
     try {
-      await kycAPI.updateAssetStatus(selectedAsset.assetId, {
+      const response = await kycAPI.updateAssetStatus(selectedAsset.assetId, {
         verificationStatus: assetUpdateStatus,
         rejectionReason: assetUpdateStatus === 'rejected' ? assetRejectionReason : undefined,
       });
@@ -127,7 +133,7 @@ export default function AdminDashboard() {
       await fetchAssets();
 
       // Show success message
-      alert('Asset status updated successfully');
+      alert(response.data.message || 'Asset status updated successfully');
       setShowAssetModal(false);
     } catch (err) {
       console.error('Update asset status error:', err);
@@ -190,47 +196,14 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
       <Navbar />
 
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
-        {/* Admin Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
-                <ShieldCheck className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-3xl font-black tracking-tight text-white">
-                    Administrator & Compliance Portal
-                  </h1>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                    Admin View
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Logged in as <strong className="text-zinc-200">{user?.name || "System Administrator"}</strong> ({user?.email})
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Action Links for Admin Modules */}
-          <div className="flex items-center gap-3">
-            <Link
-              to="/admin/distributions"
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-500/20 transition-all"
-            >
-              <Coins className="w-4 h-4" />
-              Distribution Rounds <ArrowUpRight className="w-3.5 h-3.5" />
-            </Link>
-            <Link
-              to="/gas-analytics"
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-amber-400 border border-zinc-800 font-bold text-xs rounded-xl transition-all"
-            >
-              <Flame className="w-4 h-4" />
-              Gas Analytics <ArrowUpRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 w-full">
+        {/* Page header (the sidebar already links to Dividends and Gas Analytics) */}
+        <div className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">KYC & Asset Review</h1>
+          <p className="text-zinc-400 mt-1">Verify user identities and submitted properties.</p>
+          {q && (
+            <p className="text-sm text-zinc-400 mt-2">Showing matches for “{searchParams.get('q')}”. <Link to="/dashboard/admin" className="text-blue-300">Clear search</Link></p>
+          )}
         </div>
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg mb-6">
@@ -311,7 +284,7 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((userItem) => (
+                  {users.filter((u) => matches(u.name, u.email, u.role)).map((userItem) => (
                     <tr key={userItem._id} className="border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800">
                       <td className="py-3 px-4 text-sm text-zinc-900 dark:text-zinc-100">
                         {userItem.name}
@@ -411,7 +384,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {assets.map((asset) => (
+                    {assets.filter((a) => matches(a.assetName, a.name, a.owner?.name, a.owner?.email)).map((asset) => (
                       <tr key={asset.assetId} className="border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800">
                         <td className="py-3 px-4 text-sm text-zinc-900 dark:text-zinc-100">
                           {asset.assetName}
@@ -423,12 +396,13 @@ export default function AdminDashboard() {
                           {asset.owner?.name || 'Unknown'}
                         </td>
                         <td className="py-3 px-4 text-sm text-zinc-600 dark:text-zinc-400">
-                          {asset.currency} {Number(asset.valuation).toLocaleString()}
+                          {format(asset.valuationLKR ?? asset.valuation, asset.currency || 'LKR', { showCode: true })}
                         </td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(asset.verificationStatus)}`}>
-                            {asset.verificationStatus.replace('_', ' ')}
+                            Documents: {asset.verificationStatus.replace('_', ' ')}
                           </span>
+                          <p className="text-xs text-zinc-500 mt-2">Registry approval is confirmed separately when you save approval.</p>
                         </td>
                         <td className="py-3 px-4 text-sm text-zinc-600 dark:text-zinc-400">
                           {asset.riskScore !== undefined ? `${asset.riskScore}/100` : 'N/A'}
@@ -651,7 +625,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-zinc-600 dark:text-zinc-400">Valuation:</span>
-                        <span className="text-zinc-900 dark:text-zinc-100">{selectedAsset.currency} {Number(selectedAsset.valuation).toLocaleString()}</span>
+                        <span className="text-zinc-900 dark:text-zinc-100">{format(selectedAsset.valuationLKR ?? selectedAsset.valuation, selectedAsset.currency || 'LKR', { showCode: true })}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-zinc-600 dark:text-zinc-400">Verification Status:</span>

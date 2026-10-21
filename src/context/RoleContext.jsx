@@ -18,15 +18,14 @@ export const ROLE_CONFIGS = {
     color: "from-blue-600 to-cyan-600",
     textColor: "text-blue-400",
     bgBadge: "bg-blue-500/10 text-blue-400 border-blue-500/30",
-    description: "Browse marketplace, purchase fractional property shares, and claim time-weighted dividend yields.",
+    description: "Browse marketplace, purchase fractional property shares.",
     defaultRoute: "/marketplace",
     dashboardRoute: "/dashboard/investor",
     navLinks: [
       { name: "Marketplace", path: "/marketplace" },
       { name: "My Portfolio", path: "/portfolio" },
-      { name: "Profit & Yield", path: "/profit-dashboard" },
-      { name: "Claim Dividends", path: "/claims" },
-      { name: "Investor Portal", path: "/dashboard/investor" }
+      { name: "Investment Returns", path: "/profit-dashboard" },
+      { name: "Dashboard", path: "/dashboard/investor" }
     ]
   },
   asset_owner: {
@@ -41,9 +40,10 @@ export const ROLE_CONFIGS = {
     defaultRoute: "/dashboard/asset-owner",
     dashboardRoute: "/dashboard/asset-owner",
     navLinks: [
-      { name: "My Deeds & Verification", path: "/dashboard/asset-owner" },
-      { name: "Asset Tokenization", path: "/verified-assets" },
-      { name: "Owner Holdings", path: "/owner/portfolio" },
+      { name: "Dashboard", path: "/dashboard/asset-owner" },
+      { name: "My Assets", path: "/owner/assets" },
+      { name: "Tokenization", path: "/verified-assets" },
+      { name: "Holdings & Valuations", path: "/owner/portfolio" },
       { name: "Marketplace", path: "/marketplace" }
     ]
   },
@@ -55,11 +55,12 @@ export const ROLE_CONFIGS = {
     color: "from-purple-600 to-indigo-600",
     textColor: "text-purple-400",
     bgBadge: "bg-purple-500/10 text-purple-400 border-purple-500/30",
-    description: "Calculate time-weighted integrals, publish Merkle dividend distribution roots, and monitor gas benchmarks.",
-    defaultRoute: "/admin/distributions",
-    dashboardRoute: "/dashboard/admin",
+    description: "Review owners and properties, approve valuations, and monitor gas costs.",
+    defaultRoute: "/admin",
+    dashboardRoute: "/admin",
     navLinks: [
-      { name: "Distribution Rounds", path: "/admin/distributions" },
+      { name: "Property Revaluation", path: "/valuations/revalue" },
+      { name: "Valuation Approvals", path: "/valuations/approvals" },
       { name: "User KYC Review", path: "/dashboard/admin" },
       { name: "Gas Fee Analytics", path: "/gas-analytics" }
     ]

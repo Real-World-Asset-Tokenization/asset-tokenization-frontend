@@ -1,8 +1,15 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { AlertTriangle, Hexagon, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../lib/api';
 import { Input } from '../components/Input';
+
+const ROLES = [
+  ['investor', 'Investor', 'Buy, sell and earn from property tokens.'],
+  ['asset_owner', 'Asset owner', 'List your property and tokenize it.'],
+  ['compliance_officer', 'Compliance', 'Review identities and properties.'],
+];
 
 export default function Register() {
   const navigate = useNavigate();
@@ -72,101 +79,92 @@ export default function Register() {
     }
   };
 
+  const role = ROLES.find(([v]) => v === formData.role);
+  const needsKyc = formData.role !== 'compliance_officer';
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-black px-4">
-      <div className="max-w-md w-full bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-8">
-        <h1 className="text-2xl font-bold text-center mb-6 text-zinc-900 dark:text-zinc-100">
-          Create Account
-        </h1>
+    <div className="auth-bg min-h-screen flex flex-col items-center justify-center px-4 py-10 text-white">
+      <Link to="/" className="mb-8 inline-flex items-center gap-3" aria-label="TerraToken home">
+        <span className="w-10 h-10 rounded-xl bg-[#1fe06f] flex items-center justify-center"><Hexagon className="w-5 h-5 text-[#04130a]" /></span>
+        <span className="text-xl font-bold tracking-tight">TerraToken</span>
+      </Link>
+
+      <main className="rise w-full max-w-md rounded-3xl border border-white/10 bg-[#232427] p-7 sm:p-8 shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)]">
+        <h1 className="text-2xl font-bold tracking-tight">Create account</h1>
+        <p className="mt-1 text-sm text-[#a1a1aa]">It takes a minute.</p>
 
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg mb-4">
-            {error}
+          <div role="alert" className="mt-5 flex gap-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />{error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="Full Name"
-            type="text"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="Enter your full name"
-            required
-          />
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <fieldset>
+            <legend className="mb-1.5 text-sm font-medium text-[#d4d4d8]">I am joining as</legend>
+            <div role="radiogroup" className="flex gap-1 rounded-2xl bg-[#1b1c1f] p-1">
+              {ROLES.map(([value, label]) => {
+                const on = formData.role === value;
+                return (
+                  <label key={value} className={`flex-1 cursor-pointer rounded-xl px-2 py-2.5 text-center text-sm font-semibold transition-colors ${on ? 'bg-[#1fe06f] text-[#04130a]' : 'text-[#a1a1aa] hover:text-white'}`}>
+                    <input type="radio" name="role" value={value} checked={on} onChange={() => setFormData({ ...formData, role: value })} className="sr-only" />
+                    {label}
+                  </label>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-[#a1a1aa]">{role[2]}</p>
+          </fieldset>
 
-          <Input
-            label="Email"
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            placeholder="Enter your email"
-            required
-          />
+          <Input label="Full name" type="text" autoComplete="name" value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Your full name" required />
 
-          <Input
-            label="Password"
-            type="password"
-            value={formData.password}
-            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            placeholder="Create a password"
-            required
-          />
+          <Input label="Email" type="email" autoComplete="email" value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="you@example.com" required />
 
-          <Input
-            label="Confirm Password"
-            type="password"
-            value={formData.confirmPassword}
-            onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-            placeholder="Confirm your password"
-            required
-          />
-
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Role
-            </label>
-            <select
-              value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-              className="px-4 py-2 rounded-lg border border-zinc-300 bg-white dark:bg-zinc-800 dark:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            >
-              <option value="investor">Investor</option>
-              <option value="asset_owner">Asset Owner</option>
-              <option value="compliance_officer">Compliance Officer</option>
-            </select>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Input label="Password" type="password" autoComplete="new-password" value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create a password" required />
+            <Input label="Confirm password" type="password" autoComplete="new-password" value={formData.confirmPassword}
+              onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} placeholder="Repeat it" required />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <Input
-              label="Ethereum Wallet Address (Optional)"
-              type="text"
-              value={formData.walletAddress}
-              onChange={(e) => setFormData({ ...formData, walletAddress: e.target.value })}
-              placeholder="0x... (leave blank to link later)"
-            />
-            <span className="text-[11px] text-zinc-500">
-              Each wallet ID is unique to one account. You can also link your wallet at any time after login.
-            </span>
-          </div>
+          <details className="group rounded-xl border border-white/10 bg-[#1b1c1f] px-4 py-3">
+            <summary className="cursor-pointer text-sm font-medium text-[#d4d4d8] list-none flex items-center justify-between">
+              Add a wallet now <span className="text-xs font-normal text-[#8e8f98]">optional</span>
+            </summary>
+            <div className="mt-3">
+              <Input type="text" aria-label="Ethereum wallet address" autoComplete="off" spellCheck={false} value={formData.walletAddress}
+                onChange={(e) => setFormData({ ...formData, walletAddress: e.target.value })} placeholder="0x…"
+                hint="Each wallet belongs to one account. You can also link it after you sign in." />
+            </div>
+          </details>
+
+          {needsKyc && (
+            <div className="rounded-xl border border-white/10 bg-[#1b1c1f] px-4 py-3 text-sm">
+              <p className="font-semibold text-white">What happens next</p>
+              <ol className="mt-1.5 space-y-1 text-[#a1a1aa] list-decimal pl-5">
+                <li>Sign in to your new account.</li>
+                <li>Verify your identity (KYC) with a National ID, passport or driving licence.</li>
+                <li>{formData.role === 'asset_owner' ? 'Submit your property for approval.' : 'Start trading property tokens.'}</li>
+              </ol>
+            </div>
+          )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#1fe06f] hover:bg-[#4aeb8a] py-3 font-bold text-[#04130a] disabled:opacity-60"
           >
-            {loading ? 'Creating account...' : 'Register'}
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading ? 'Creating account…' : 'Create account'}
           </button>
         </form>
+      </main>
 
-        <p className="text-center mt-6 text-zinc-600 dark:text-zinc-400">
-          Already have an account?{' '}
-          <a href="/login" className="text-blue-600 hover:text-blue-700 font-medium">
-            Login
-          </a>
-        </p>
-      </div>
+      <p className="mt-6 text-sm text-[#a1a1aa]">
+        Already have an account? <Link to="/login" className="font-semibold text-[#1fe06f] hover:underline">Sign in</Link>
+      </p>
     </div>
   );
 }

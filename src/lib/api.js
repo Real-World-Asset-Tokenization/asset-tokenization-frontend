@@ -36,6 +36,8 @@ export const authAPI = {
 
   updateWallet: (walletAddress) =>
     api.put('/auth/wallet', { walletAddress }),
+  checkWallet: (walletAddress) =>
+    api.get(`/auth/wallet/check/${walletAddress}`),
 
   getMe: () =>
     api.get('/auth/me'),

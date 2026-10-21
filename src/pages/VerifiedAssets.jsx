@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import AddToChainButton from "../components/AddToChainButton";
 import Navbar from "../components/Navbar";
 import { useCurrency } from "../context/CurrencyContext";
 import { useRole } from "../context/RoleContext";
+import { useAuth } from "../context/AuthContext";
+import { resolveUserWallet } from "../lib/walletResolver";
+import { isAssetOwnedByUser } from "../lib/assetOwnership";
 import { fetchVerifiedAssets } from "../services/tokenizationService";
 import {
   ShieldCheck,
@@ -21,8 +25,11 @@ import {
 export default function VerifiedAssets() {
   const navigate = useNavigate();
   const { formatLKR } = useCurrency();
-  const { activeRole } = useRole();
-  const [assets, setAssets] = useState([]);
+  const { activeRole, isInvestor } = useRole();
+  const { user } = useAuth();
+  const ownerWallet = resolveUserWallet(user);
+  const [loadedAssets, setAssets] = useState([]);
+  const assets = loadedAssets.filter(asset => isAssetOwnedByUser(asset, user));
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all"); // all, eligible, tokenized
   const [account, setAccount] = useState("");
@@ -45,7 +52,7 @@ export default function VerifiedAssets() {
   const loadAssets = async () => {
     setLoading(true);
     try {
-      const data = await fetchVerifiedAssets();
+      const data = user?.token ? await fetchVerifiedAssets(null, true) : [];
       setAssets(data);
     } catch (err) {
       console.error("Error loading verified assets:", err);
@@ -56,7 +63,7 @@ export default function VerifiedAssets() {
 
   useEffect(() => {
     loadAssets();
-  }, []);
+  }, [user]);
 
   const filteredAssets = assets.filter((asset) => {
     if (filter === "eligible") return asset.isEligibleForTokenization;
@@ -276,7 +283,12 @@ export default function VerifiedAssets() {
                             Trade
                           </Link>
                         </div>
-                      ) : (
+                      ) : !isInvestor && asset.verificationStatus === "APPROVED" && (asset.chainStatus === "missing" || asset.chainStatus === "pending") ? (
+                        <div className="space-y-2">
+                          <p className="text-xs text-amber-300">Not on the current blockchain yet. Add it, then tokenize.</p>
+                          <AddToChainButton asset={asset} chainStatus={asset.chainStatus} onDone={loadAssets} />
+                        </div>
+                      ) : !isInvestor ? (
                         <Link
                           to={`/tokenization/preview/${asset.assetId}`}
                           className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 group-hover:gap-3 cursor-pointer"
@@ -285,6 +297,10 @@ export default function VerifiedAssets() {
                           <span>Review & Tokenize Asset</span>
                           <ArrowRight className="w-4 h-4" />
                         </Link>
+                      ) : (
+                        <div className="text-center py-2 text-xs text-zinc-500 font-medium">
+                          Awaiting Asset Owner Tokenization
+                        </div>
                       )}
                     </div>
                   </div>
