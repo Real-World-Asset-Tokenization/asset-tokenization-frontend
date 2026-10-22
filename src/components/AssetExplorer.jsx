@@ -8,6 +8,7 @@ import { Badge, SellerTag, cardClass } from "./ui/dash";
 import ValuationPanel from "./ValuationPanel";
 import PriceHistoryChart from "./PriceHistoryChart";
 import MarketPanel from "./market/MarketPanel";
+import PropertyCover from "./market/PropertyCover";
 
 const activeOffers = (asset, listings) => listings.filter((o) => Number(o.assetId) === Number(asset.tokenId) && isActiveOffer(o));
 const inputCls = "px-3.5 py-2.5 rounded-xl border border-[#1b2440] bg-[#0b1124] text-white outline-none focus:border-indigo-500";
@@ -18,7 +19,7 @@ export function AssetPhoto({ asset, large = false }) {
     <div className={`relative overflow-hidden bg-gradient-to-br from-[#141c33] via-indigo-950 to-[#070b18] ${large ? "h-64 sm:h-96" : "h-48"}`}>
       {asset.imageUrl && !failed
         ? <img src={asset.imageUrl} onError={() => setFailed(true)} alt={asset.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
-        : <div className="h-full flex flex-col items-center justify-center gap-2 text-[#6b7599]"><Building2 size={48} strokeWidth={1} /><span className="text-xs">No photo provided</span></div>}
+        : <PropertyCover asset={asset} className="absolute inset-0" />}
     </div>
   );
 }

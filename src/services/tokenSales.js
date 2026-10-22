@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { getContracts, trackTxGas } from "./contractService";
+import { getContracts, getContractAddresses, trackTxGas } from "./contractService";
 
 const STATUS = ["Active", "Sold", "Cancelled"];
 const isLive = (l, now = Date.now() / 1000) => l.status === "Active" && (!l.expiresAt || l.expiresAt > now);
@@ -59,25 +59,59 @@ export async function cancelOffer(listingId) {
   return (await tokenMarketplaceContract.cancelListing(listingId)).wait();
 }
 
+
+// Completed purchases come from two events: a normal offer (ListingPurchased) and a signed order
+// (SignedOrderFilled). Both are returned in one shape. A signed order's id matches the book's "S-XXXXXX".
+const signedId = (hash) => `S-${hash.slice(2, 8).toUpperCase()}`;
+// The current marketplace plus any that it replaced, so earlier trades are not lost when the contract is upgraded.
+const marketplaces = (c) => [c, ...getContractAddresses().previousTokenMarketplaces.map((address) => new ethers.Contract(address, c.interface, c.runner))];
+
+async function fillEvents(c, { buyer = null, seller = null } = {}) {
+  const found = await Promise.all(marketplaces(c).map(async (m) => Promise.all([
+    m.queryFilter(m.filters.ListingPurchased(null, buyer, seller)),
+    m.interface.getEvent("SignedOrderFilled") ? m.queryFilter(m.filters.SignedOrderFilled(null, seller, buyer)) : [],
+  ])));
+  const normal = found.flatMap(([n]) => n);
+  const signed = found.flatMap(([, sg]) => sg);
+  return [
+    ...normal.map((e) => ({ e, listingId: Number(e.args.listingId) })),
+    ...signed.map((e) => ({ e, listingId: signedId(e.args.orderHash) })),
+  ].map(({ e, listingId }) => ({
+    listingId, buyer: e.args.buyer, seller: e.args.seller, assetId: Number(e.args.assetId), amount: Number(e.args.amount),
+    totalPrice: e.args.totalPrice, platformFee: e.args.platformFee, blockNumber: e.blockNumber,
+    transactionHash: e.transactionHash, index: e.index,
+  }));
+}
+
+// Resale royalty paid to the issuer out of a seller's proceeds, summed per transaction and property.
+async function royaltiesPaidBy(c, wallet) {
+  const paid = new Map();
+  if (!c.interface.getEvent("RoyaltyPaid")) return paid;
+  const events = (await Promise.all(marketplaces(c).map((m) => m.queryFilter(m.filters.RoyaltyPaid(null, null, wallet))))).flat();
+  for (const e of events) {
+    const key = `${e.transactionHash}:${Number(e.args.assetId)}`;
+    paid.set(key, (paid.get(key) || 0) + Number(ethers.formatUnits(e.args.amount, 6)));
+  }
+  return paid;
+}
+
 // The wallet's completed marketplace trades (bought and sold), newest first.
 export async function loadMyTrades(wallet) {
-  const { tokenMarketplaceContract, registryContract, runner } = await getContracts(false);
+  const { tokenMarketplaceContract: c, registryContract, runner } = await getContracts(false);
   try {
-    const [bought, sold] = await Promise.all([
-      tokenMarketplaceContract.queryFilter(tokenMarketplaceContract.filters.ListingPurchased(null, wallet)),
-      tokenMarketplaceContract.queryFilter(tokenMarketplaceContract.filters.ListingPurchased(null, null, wallet)),
-    ]);
+    const [bought, sold, royalties] = await Promise.all([fillEvents(c, { buyer: wallet }), fillEvents(c, { seller: wallet }), royaltiesPaidBy(c, wallet)]);
     const names = new Map();
-    const rows = await Promise.all([...bought.map((e) => [e, "Bought"]), ...sold.map((e) => [e, "Sold"])].map(async ([e, side]) => {
-      const assetId = Number(e.args.assetId);
-      if (!names.has(assetId)) names.set(assetId, registryContract.getAsset(assetId).then((a) => a.name).catch(() => `Asset #${assetId}`));
-      const [block, name] = await Promise.all([runner.getBlock(e.blockNumber), names.get(assetId)]);
-      const total = Number(ethers.formatUnits(e.args.totalPrice, 6));
+    const rows = await Promise.all([...bought.map((f) => [f, "Bought"]), ...sold.map((f) => [f, "Sold"])].map(async ([f, side]) => {
+      if (!names.has(f.assetId)) names.set(f.assetId, registryContract.getAsset(f.assetId).then((a) => a.name).catch(() => `Asset #${f.assetId}`));
+      const [block, name] = await Promise.all([runner.getBlock(f.blockNumber), names.get(f.assetId)]);
+      const total = Number(ethers.formatUnits(f.totalPrice, 6));
+      const fee = Number(ethers.formatUnits(f.platformFee, 6));
+      const royalty = royalties.get(`${f.transactionHash}:${f.assetId}`) || 0;
       return {
-        side, assetId, name, amount: Number(e.args.amount), total,
-        listingId: Number(e.args.listingId), buyer: e.args.buyer, seller: e.args.seller,
-        received: side === "Sold" ? total - Number(ethers.formatUnits(e.args.platformFee, 6)) : null,
-        at: new Date(block.timestamp * 1000), txHash: e.transactionHash,
+        side, assetId: f.assetId, name, amount: f.amount, total,
+        listingId: f.listingId, buyer: f.buyer, seller: f.seller,
+        received: side === "Sold" ? total - fee - royalty : null,
+        at: new Date(block.timestamp * 1000), txHash: f.transactionHash,
       };
     }));
     return rows.sort((a, b) => b.at - a.at);
@@ -89,13 +123,12 @@ export async function loadMyTrades(wallet) {
 export async function loadTradeHistory(tokenId) {
   const { tokenMarketplaceContract, runner } = await getContracts(false);
   try {
-    const events = (await tokenMarketplaceContract.queryFilter(tokenMarketplaceContract.filters.ListingPurchased()))
-      .filter((e) => Number(e.args.assetId) === Number(tokenId));
-    const rows = await Promise.all(events.map(async (e) => {
-      const block = await runner.getBlock(e.blockNumber);
-      const amount = Number(e.args.amount);
-      const total = Number(ethers.formatUnits(e.args.totalPrice, 6));
-      return { at: new Date(block.timestamp * 1000), amount, total, price: amount > 0 ? total / amount : null, txHash: e.transactionHash };
+    const events = (await fillEvents(tokenMarketplaceContract)).filter((f) => f.assetId === Number(tokenId));
+    const rows = await Promise.all(events.map(async (f) => {
+      const block = await runner.getBlock(f.blockNumber);
+      const amount = f.amount;
+      const total = Number(ethers.formatUnits(f.totalPrice, 6));
+      return { at: new Date(block.timestamp * 1000), amount, total, price: amount > 0 ? total / amount : null, txHash: f.transactionHash };
     }));
     return rows.filter((r) => r.price != null).sort((a, b) => a.at - b.at);
   } finally { runner.destroy(); }
@@ -106,17 +139,17 @@ export async function loadTradeHistory(tokenId) {
 export async function loadAllTrades() {
   const { tokenMarketplaceContract, runner } = await getContracts(false);
   try {
-    const events = await tokenMarketplaceContract.queryFilter(tokenMarketplaceContract.filters.ListingPurchased());
+    const events = await fillEvents(tokenMarketplaceContract);
     const blocks = new Map();
-    const rows = await Promise.all(events.map(async (e) => {
-      if (!blocks.has(e.blockNumber)) blocks.set(e.blockNumber, runner.getBlock(e.blockNumber));
-      const block = await blocks.get(e.blockNumber);
-      const amount = Number(e.args.amount);
-      const total = Number(ethers.formatUnits(e.args.totalPrice, 6));
+    const rows = await Promise.all(events.map(async (f) => {
+      if (!blocks.has(f.blockNumber)) blocks.set(f.blockNumber, runner.getBlock(f.blockNumber));
+      const block = await blocks.get(f.blockNumber);
+      const amount = f.amount;
+      const total = Number(ethers.formatUnits(f.totalPrice, 6));
       return {
-        assetId: Number(e.args.assetId), listingId: Number(e.args.listingId), buyer: e.args.buyer, seller: e.args.seller,
+        assetId: f.assetId, listingId: f.listingId, buyer: f.buyer, seller: f.seller,
         amount, total, price: amount > 0 ? total / amount : null,
-        t: block.timestamp * 1000, txHash: e.transactionHash, logIndex: e.index,
+        t: block.timestamp * 1000, txHash: f.transactionHash, logIndex: f.index,
       };
     }));
     return rows.filter((r) => r.price != null).sort((a, b) => a.t - b.t || a.logIndex - b.logIndex);

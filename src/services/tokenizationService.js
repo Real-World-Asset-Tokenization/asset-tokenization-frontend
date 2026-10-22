@@ -182,7 +182,7 @@ export async function executeOwnerTokenization(assetId, onStatusUpdate = () => {
   const receipt = await tx.wait();
 
   // 4. Gas tracking
-  await trackTxGas(tx.hash, "TokenizeAsset", signerAddress, "AssetOwner", dbAssetId || assetId);
+  await trackTxGas(tx.hash, "AssetTokenization", signerAddress, "AssetOwner", dbAssetId || assetId);
 
   // 5. Reconcile with Backend & Azure Cosmos DB
   onStatusUpdate("Confirming blockchain receipt with Azure database...");

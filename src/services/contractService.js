@@ -16,6 +16,9 @@ export function getContractAddresses() {
     governanceAddress: c.AssetGovernance?.address || "0x4A679253410272dd5232B3Ff7cF5dbB88f295319",
     snapshotDistributionAddress: c.SnapshotProfitDistribution?.address || "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
     distributionAddress: c.ProfitDistribution?.address || "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+    propertySaleAddress: c.PropertySale?.address || "",
+    // Marketplaces that were replaced: their past trades still count toward price history.
+    previousTokenMarketplaces: deployedData?.previousTokenMarketplaces || [],
 
     registryAbi: c.AssetRegistry?.abi || [],
     tokenAbi: c.AssetToken?.abi || [],
@@ -24,7 +27,8 @@ export function getContractAddresses() {
     tokenMarketplaceAbi: c.TokenMarketplace?.abi || [],
     governanceAbi: c.AssetGovernance?.abi || [],
     snapshotDistributionAbi: c.SnapshotProfitDistribution?.abi || [],
-    distributionAbi: c.ProfitDistribution?.abi || []
+    distributionAbi: c.ProfitDistribution?.abi || [],
+    propertySaleAbi: c.PropertySale?.abi || []
   };
 }
 
@@ -146,6 +150,7 @@ export async function getContracts(withSigner = false) {
   const tokenMarketplaceContract = new ethers.Contract(addrs.tokenMarketplaceAddress, addrs.tokenMarketplaceAbi, runner);
   const distributionContract = new ethers.Contract(addrs.distributionAddress, addrs.distributionAbi, runner);
   const governanceContract = new ethers.Contract(addrs.governanceAddress, addrs.governanceAbi, runner);
+  const saleContract = addrs.propertySaleAddress ? new ethers.Contract(addrs.propertySaleAddress, addrs.propertySaleAbi, runner) : null;
 
   return {
     registryContract,
@@ -154,6 +159,7 @@ export async function getContracts(withSigner = false) {
     tokenMarketplaceContract,
     distributionContract,
     governanceContract,
+    saleContract,
     addrs,
     runner
   };

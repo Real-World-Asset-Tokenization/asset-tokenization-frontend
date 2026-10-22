@@ -30,7 +30,10 @@ export function useMarketplaceData({ wallet, mine = false, token } = {}) {
       const res = await fetch(`${API}/listings`);
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error();
-      setState((s) => ({ ...s, listings: data.data, listingsLoading: false }));
+      // Off-chain signed orders sit in the same book. If they cannot be loaded the on-chain offers still show.
+      const signed = await fetch(`${API.replace("/marketplace", "")}/orders`)
+        .then((r) => (r.ok ? r.json() : null)).then((j) => (j?.success ? j.data : [])).catch(() => []);
+      setState((s) => ({ ...s, listings: [...data.data, ...signed], listingsLoading: false }));
     } catch {
       setState((s) => ({ ...s, listings: [], listingsLoading: false, listingsError: "Sale offers could not be loaded." }));
     }

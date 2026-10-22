@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ethers } from "ethers";
 import { Tag, Coins, Layers, Store, Building2, AlertTriangle, CheckCircle2, X, RefreshCw, Wallet, Percent } from "lucide-react";
 import { AssetDetail, InvestorCatalog } from "../components/AssetExplorer";
 import { getContracts, trackTxGas, getPaymentTokenBalance } from "../services/contractService";
+import { ordersAPI } from "../lib/api";
 import { useRole } from "../context/RoleContext";
-import { InvestorBrowse, BestDeals, MyPurchases, gapInfo } from "../components/market/InvestorViews";
+import { BestDeals, MyPurchases, gapInfo } from "../components/market/InvestorViews";
+import { InvestorShop } from "../components/market/InvestorShop";
 import { loadMyTrades } from "../services/tokenSales";
 import { useAllTrades } from "../lib/useAllTrades";
 import MarketWatch from "../components/market/MarketWatch";
@@ -18,7 +21,7 @@ import { PageHeader, ActionButton, Stat, Badge, SellerTag, cardClass, pageClass,
 const PRICE_WARNING_RATIO = 0.5;
 // Owners and issuers manage sales; investors mostly buy, so they get a buy-first layout.
 const OWNER_TABS = [["market", "Market"], ["browse", "Buy tokens"], ["offers", "All offers"], ["mine", "My sales"]];
-const INVESTOR_TABS = [["browse", "Browse"], ["deals", "Best deals"], ["market", "Market"], ["purchases", "My purchases"], ["mine", "My sales"]];
+const INVESTOR_TABS = [["browse", "Invest"], ["mine", "Sell or exit"]];
 
 export default function Marketplace() {
   const { assetId: detailAssetId } = useParams();
@@ -95,6 +98,57 @@ export default function Marketplace() {
       const signer = await runner.getAddress();
       if (signer.toLowerCase() === listing.seller.toLowerCase()) throw new Error("You cannot buy your own offer.");
       if (!Number.isSafeInteger(listing.amount) || listing.amount <= 0) throw new Error("Choose a positive whole number of tokens.");
+
+      // A signed order was never written to the chain by the seller: this purchase verifies the
+      // signature and settles in one transaction.
+      if (listing.kind === "signed") {
+        // An offer at the approved price is priced when it is bought. The buyer allows up to 2% above today's price,
+        // so a revaluation that lands first cannot cost them more; the purchase fails instead.
+        const follows = Boolean(listing.follow);
+        const limit = follows ? (BigInt(listing.pricePerTokenBase) * 102n) / 100n : BigInt(listing.pricePerTokenBase);
+        const cost = limit * BigInt(listing.amount);
+        const fillName = follows ? "fillFollowOrder" : "fillSignedOrder";
+        const fill = () => (follows
+          ? tokenMarketplaceContract.fillFollowOrder(listing.order, listing.signature, listing.amount, limit)
+          : tokenMarketplaceContract.fillSignedOrder(listing.order, listing.signature, listing.amount));
+        const allowance = await paymentTokenContract.allowance(signer, addrs.tokenMarketplaceAddress);
+        const canPermit = tokenMarketplaceContract.interface.hasFunction(`${fillName}WithPermit`) && paymentTokenContract.interface.hasFunction("permit");
+        let signedTx;
+        if (allowance >= cost) {
+          setBuyStep("purchasing");
+          signedTx = await fill();
+        } else if (canPermit) {
+          // Sign the payment allowance off-chain: one transaction instead of approve + buy.
+          const chainId = (await runner.provider.getNetwork()).chainId;
+          const deadline = Math.floor(Date.now() / 1000) + 3600;
+          const permitSignature = ethers.Signature.from(await runner.signTypedData(
+            { name: await paymentTokenContract.name(), version: "1", chainId, verifyingContract: addrs.paymentTokenAddress },
+            { Permit: [
+              { name: "owner", type: "address" }, { name: "spender", type: "address" }, { name: "value", type: "uint256" },
+              { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" },
+            ] },
+            { owner: signer, spender: addrs.tokenMarketplaceAddress, value: cost, nonce: await paymentTokenContract.nonces(signer), deadline },
+          ));
+          setBuyStep("purchasing");
+          signedTx = follows
+            ? await tokenMarketplaceContract.fillFollowOrderWithPermit(
+              listing.order, listing.signature, listing.amount, limit, deadline, permitSignature.v, permitSignature.r, permitSignature.s,
+            )
+            : await tokenMarketplaceContract.fillSignedOrderWithPermit(
+              listing.order, listing.signature, listing.amount, deadline, permitSignature.v, permitSignature.r, permitSignature.s,
+            );
+        } else {
+          await (await paymentTokenContract.approve(addrs.tokenMarketplaceAddress, cost)).wait();
+          setBuyStep("purchasing");
+          signedTx = await fill();
+        }
+        const signedReceipt = await signedTx.wait();
+        setTxHash(signedReceipt.hash); setBuyStep("done");
+        trackTxGas(signedReceipt.hash, "SignedOrderPurchase", signer, "Investor", listing.assetId).catch(() => {});
+        reload();
+        return;
+      }
+
       const latest = await tokenMarketplaceContract.getListing(listing.listingId);
       if (Number(latest.status) !== 0 || BigInt(listing.amount) > latest.amount) throw new Error("This offer has changed. Refresh and choose an available quantity.");
       const partial = tokenMarketplaceContract.interface.hasFunction("buyListingAmount");
@@ -125,14 +179,31 @@ export default function Marketplace() {
     setCancelling(listingId); setCancelError("");
     try {
       const { tokenMarketplaceContract } = await getContracts(true);
-      await (await tokenMarketplaceContract.cancelListing(listingId)).wait();
+      const signedOffer = listings.find((o) => o.listingId === listingId && o.kind === "signed");
+      if (signedOffer) {
+        // Cancel on-chain so the signature is dead everywhere, then hide it from the order book.
+        await (await (signedOffer.follow ? tokenMarketplaceContract.cancelFollowOrder(signedOffer.order) : tokenMarketplaceContract.cancelSignedOrder(signedOffer.order))).wait();
+        await ordersAPI.cancel(signedOffer.orderHash).catch(() => {});
+      } else {
+        await (await tokenMarketplaceContract.cancelListing(listingId)).wait();
+      }
       setConfirmCancel(null);
       loadListings();
+      return true;
     } catch (err) {
       setCancelError(err.reason || err.shortMessage || err.message || "Cancellation failed");
+      return false;
     } finally {
       setCancelling(null);
     }
+  };
+
+  // The approved price follows the property's valuation, but an offer keeps the price it was listed at.
+  // "Update price" stops the offer and opens the sell page with the unsold tokens and the new approved price.
+  const repriceOffer = async (o) => {
+    if (!(await handleCancel(o.listingId))) return;
+    const a = byToken.get(Number(o.assetId));
+    navigate(`${isInvestor ? "/marketplace/sell" : `/owner/release/${o.assetId}`}?asset=${a.tokenId}&amount=${Number(o.amount)}`);
   };
 
   if (detailAssetId) {
@@ -154,15 +225,20 @@ export default function Marketplace() {
   return (
     <div className={pageClass}>
       {isInvestor ? (
-        <PageHeader
-          title="Buy property tokens"
-          subtitle="Own a share of real property. Compare prices with the approved value, pick a property and buy. Every purchase settles on the blockchain."
-          actions={<>
+        <div className="rise relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5 overflow-hidden rounded-3xl border border-[#2c2d31] p-6 sm:p-8" style={{ background: "radial-gradient(circle at 8% 0%, rgba(56,189,248,0.22), transparent 42%), radial-gradient(circle at 92% 100%, rgba(167,139,250,0.22), transparent 45%), radial-gradient(circle at 55% 0%, rgba(31,224,111,0.16), transparent 40%), #1b1c1f" }}>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#1fe06f]">Marketplace</p>
+            <h1 className="mt-1.5 text-3xl sm:text-4xl font-bold tracking-tight text-white">Invest in <span style={{ background: "linear-gradient(90deg,#1fe06f,#38bdf8,#a78bfa)", WebkitBackgroundClip: "text", color: "transparent" }}>real property</span></h1>
+            <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-[#98a2c3]">
+              Own a share of real estate from a single token. Choose a property, decide how much to invest, and share in its sale proceeds. Every investment settles on the blockchain.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 sm:gap-3">
             <ActionButton onClick={reload} icon={RefreshCw}>Refresh</ActionButton>
             <ActionButton to="/marketplace/sell" icon={Tag}>Sell tokens</ActionButton>
             <ActionButton to="/portfolio" primary icon={Wallet}>My portfolio</ActionButton>
-          </>}
-        />
+          </div>
+        </div>
       ) : (
         <PageHeader
           title="Token marketplace"
@@ -174,20 +250,7 @@ export default function Marketplace() {
         />
       )}
 
-      {isInvestor ? (() => {
-        const gaps = active.map((o) => gapOf(o.assetId, o.pricePerTokenFormatted)).filter((g) => g != null);
-        const below = gaps.filter((g) => g < -0.005).length;
-        const best = gaps.length ? Math.min(...gaps) : null;
-        const bestInfo = gapInfo(best);
-        return (
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
-            <Stat label="Your cash" icon={Wallet} value={!wallet ? "—" : cash == null ? "…" : formatMUSD(cash)} note={wallet ? "Demo mUSD, ready to buy with" : "Connect a wallet to buy"} to="/portfolio" />
-            <Stat label="Properties for sale" icon={Building2} value={v(forSale.size)} note={loading ? "" : `of ${assets.length} tokenized`} />
-            <Stat label="Offers below approved" icon={Percent} value={v(below)} tone={below ? "up" : undefined} note="Cheaper than the official value" />
-            <Stat label="Best discount" icon={Store} value={v(best != null && best < 0 ? `${Math.abs(best * 100).toFixed(0)}%` : "None")} tone={best != null && best < 0 ? "up" : undefined} note={best != null && best < 0 ? bestInfo.label : "No offer under approved price"} />
-          </div>
-        );
-      })() : (
+      {!isInvestor && (
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
           <Stat label="Properties for sale" icon={Building2} value={v(forSale.size)} note={loading ? "" : `of ${assets.length} tokenized`} />
           <Stat label="Active offers" icon={Store} value={v(active.length)} />
@@ -215,7 +278,7 @@ export default function Marketplace() {
       )}
 
       {tab === "browse" && (isInvestor
-        ? <InvestorBrowse assets={assets} offers={active} reference={reference} trades={market.trades} loading={assetsLoading || listingsLoading} error={assetsError || listingsError} onRetry={reload} />
+        ? <InvestorShop assets={assets} offers={active} reference={reference} trades={market.trades} loading={assetsLoading || listingsLoading} error={assetsError || listingsError} onRetry={reload} cash={cash} wallet={wallet} onBuy={reviewPurchase} />
         : assetsLoading ? <p className="text-[#98a2c3]">Loading properties…</p>
           : <InvestorCatalog assets={assets} listings={known} loadingOffers={listingsLoading} offersError={listingsError} reference={reference} wallet={wallet} />
       )}
@@ -232,7 +295,7 @@ export default function Marketplace() {
       )}
 
       {tab === "mine" && (
-        <MySales {...{ wallet, holdings, active, myOffers, trades, tradesError, byToken, formatMUSD, mineFilter, cancelError }}
+        <MySales {...{ wallet, holdings, active, myOffers, trades, tradesError, byToken, formatMUSD, mineFilter, cancelError, refUsd, repriceOffer, cancelling }}
           loading={assetsLoading || listingsLoading}
           cancelAction={(o) => !isActiveOffer(o) ? null : confirmCancel === o.listingId ? (
             <span className="flex gap-2 justify-end">
@@ -260,7 +323,7 @@ const td = "px-4 py-3 whitespace-nowrap";
 
 // Everything a seller needs in one place: how selling works, what they can sell,
 // each offer's progress (listed → sold → left) and every completed sale.
-function MySales({ wallet, holdings, active, myOffers, trades, tradesError, loading, byToken, formatMUSD, mineFilter, cancelError, cancelAction }) {
+function MySales({ wallet, holdings, active, myOffers, trades, tradesError, loading, byToken, formatMUSD, mineFilter, cancelError, cancelAction, refUsd, repriceOffer, cancelling }) {
   if (!wallet) {
     return <section className={`${cardClass} p-6`}><p className="text-[#98a2c3]">Connect your wallet to see and manage your sales.</p></section>;
   }
@@ -271,7 +334,7 @@ function MySales({ wallet, holdings, active, myOffers, trades, tradesError, load
     const cur = soldBy.get(s.listingId) || { tokens: 0, received: 0 };
     soldBy.set(s.listingId, { tokens: cur.tokens + s.amount, received: cur.received + (s.received || 0) });
   }
-  const offers = [...myOffers].sort((a, b) => Number(isActiveOffer(b)) - Number(isActiveOffer(a)) || b.listingId - a.listingId);
+  const offers = [...myOffers].sort((a, b) => Number(isActiveOffer(b)) - Number(isActiveOffer(a)) || (b.createdAt || 0) - (a.createdAt || 0));
   const openOffers = offers.filter(isActiveOffer);
   const tokensForSale = openOffers.reduce((s, o) => s + Number(o.amount), 0);
   const tokensSold = sales.reduce((s, t) => s + t.amount, 0);
@@ -286,7 +349,7 @@ function MySales({ wallet, holdings, active, myOffers, trades, tradesError, load
         <ol className="grid sm:grid-cols-3 gap-3">
           {[
             ["List your tokens", "Pick a property, choose how many tokens and your price. The tokens stay in your wallet."],
-            ["Buyers see your offer", "It appears under “Buy tokens” and on the property page. Buyers can take all or part of it."],
+            ["Buyers see your offer", "It appears under “Invest” and on the property page. Buyers can take all or part of it."],
             ["You get paid automatically", "When someone buys, mUSD (minus the platform fee) arrives in your wallet and the tokens move to the buyer."],
           ].map(([title, text], i) => (
             <li key={title} className="rounded-xl border border-[#1b2440] bg-[#0e1426] p-4 flex gap-3">
@@ -313,7 +376,7 @@ function MySales({ wallet, holdings, active, myOffers, trades, tradesError, load
           <ActionButton to="/marketplace/sell" primary icon={Tag}>Sell tokens</ActionButton>
         </div>
         {loading ? <p className="text-sm text-[#98a2c3]">Reading your balances…</p>
-          : !holdings.length ? <p className="text-sm text-[#98a2c3]">Your wallet doesn't hold any property tokens yet. Buy some under “Buy tokens” first.</p>
+          : !holdings.length ? <p className="text-sm text-[#98a2c3]">Your wallet doesn't hold any property tokens yet. Invest in a property under “Invest” first.</p>
           : (
             <ul className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {holdings.map((a) => {
@@ -348,9 +411,9 @@ function MySales({ wallet, holdings, active, myOffers, trades, tradesError, load
           : !offers.length ? <p className="p-6 text-[#98a2c3]">You haven't listed any tokens yet. Use “Sell these tokens” above to create your first offer.</p>
           : (
             <div className="overflow-x-auto mt-3">
-              <table className="w-full text-sm min-w-[860px]">
+              <table className="w-full text-sm min-w-[980px]">
                 <thead className="border-b border-[#1b2440]"><tr>
-                  <th className={th}>Property</th><th className={`${th} text-right`}>Price / token</th>
+                  <th className={th}>Property</th><th className={`${th} text-right`}>Price / token</th><th className={th}>vs approved</th>
                   <th className={`${th} text-right`}>Listed</th><th className={`${th} text-right`}>Sold</th><th className={`${th} text-right`}>Still for sale</th>
                   <th className={`${th} text-right`}>You earned</th><th className={th}>Status</th><th className={th}>Ends</th><th className={th}><span className="sr-only">Action</span></th>
                 </tr></thead>
@@ -365,6 +428,18 @@ function MySales({ wallet, holdings, active, myOffers, trades, tradesError, load
                       <tr key={o.listingId} className="border-b border-[#1b2440] last:border-0 hover:bg-[#0e1426]">
                         <td className={td}><span className="block font-semibold text-white">{byToken.get(Number(o.assetId))?.name || `Token #${o.assetId}`}</span><span className="block text-xs text-[#6b7599]">Offer #{o.listingId}</span></td>
                         <td className={`${td} text-right text-white`}>{formatMUSD(o.pricePerTokenFormatted)}</td>
+                        <td className={td}>{(() => {
+                          const ref = refUsd(o.assetId);
+                          if (!live || !ref) return <span className="text-[#6b7599]">—</span>;
+                          const gp = o.pricePerTokenFormatted / ref - 1;
+                          const gi = gapInfo(gp);
+                          return (
+                            <span className="flex flex-col items-start gap-1">
+                              <span className="text-xs font-semibold" style={{ color: gi.color }}>{gi.label}</span>
+                              {Math.abs(gp) >= 0.01 && <button type="button" disabled={cancelling === o.listingId} onClick={() => repriceOffer(o)} className="text-xs font-semibold text-indigo-300 hover:text-indigo-200 disabled:opacity-50">{cancelling === o.listingId ? "Stopping…" : `Update to ${formatMUSD(ref)}`}</button>}
+                            </span>
+                          );
+                        })()}</td>
                         <td className={`${td} text-right text-white`}>{tradesLoading ? "…" : listed.toLocaleString()}</td>
                         <td className={`${td} text-right text-emerald-300 font-semibold`}>{tradesLoading ? "…" : sold.tokens.toLocaleString()}</td>
                         <td className={`${td} text-right ${left ? "text-amber-300 font-semibold" : "text-[#6b7599]"}`}>{left.toLocaleString()}</td>

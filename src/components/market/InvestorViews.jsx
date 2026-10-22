@@ -22,7 +22,7 @@ export function gapInfo(gap) {
 }
 
 // One row per property, with its open offers worked out for a buyer.
-function useDeals({ assets, offers, reference, trades }) {
+export function useDeals({ assets, offers, reference, trades }) {
   const { convert } = useCurrency();
   return useMemo(() => {
     const byToken = tradesByToken(trades || []);

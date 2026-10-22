@@ -20,6 +20,7 @@ import ReleaseTokens from './pages/owner/ReleaseTokens';
 import Portfolio from './pages/Portfolio';
 import ProfitDashboard from './pages/ProfitDashboard';
 import GasAnalytics from './pages/GasAnalytics';
+import PropertySales from './pages/PropertySales';
 import VerifiedAssets from './pages/VerifiedAssets';
 import TokenizationPreview from './pages/TokenizationPreview';
 import TokenizationStatus from './pages/TokenizationStatus';
@@ -33,7 +34,7 @@ const PUBLIC_PATHS = ['/', '/login', '/register'];
 
 // Every signed-in role gets the sidebar workspace; public pages keep the top bar.
 function AppRoutes() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { pathname } = useLocation();
 
   const routes = (
@@ -57,7 +58,8 @@ function AppRoutes() {
       <Route path="/tokenization/preview/:assetId" element={<TokenizationPreview />} />
       <Route path="/tokenization/status/:assetId" element={<TokenizationStatus />} />
       <Route path="/profit-dashboard" element={<ProfitDashboard />} />
-      <Route path="/gas-analytics" element={<GasAnalytics />} />
+      <Route path="/sales" element={<PropertySales />} />
+      <Route path="/gas-analytics" element={user?.role === 'admin' ? <GasAnalytics /> : <Navigate to="/login" replace />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/valuations/revalue" element={<PropertyRevaluation />} />
       <Route path="/valuations/approvals" element={<ValuationApprovals />} />

@@ -1,4 +1,3 @@
-import { selectLinkedWallet } from '../services/contractService';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertTriangle, Hexagon, Loader2 } from 'lucide-react';
@@ -34,11 +33,8 @@ export default function Login() {
         token,
       });
 
-      // MetaMask keeps the previous user's account selected. Ask it to switch to this user's wallet
-      // right away (opens its account chooser only when needed; ignored if cancelled).
-      if (user.walletAddress && window.ethereum) {
-        selectLinkedWallet(user.walletAddress.toLowerCase()).catch(() => {});
-      }
+      // The wallet is saved on the account, so nothing is asked at login. The app shows the saved wallet and its
+      // balance straight away, and MetaMask is only opened when a transaction needs the wallet to sign.
 
       // Redirect based on role
       if (user.role === 'investor') {

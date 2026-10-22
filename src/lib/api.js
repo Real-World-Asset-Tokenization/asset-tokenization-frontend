@@ -193,4 +193,34 @@ export const kycAPI = {
   },
 };
 
+// Off-chain signed sell orders and full-property sales (the token is attached by the interceptor above).
+export const ordersAPI = {
+  list: (assetId) => api.get("/orders", { params: assetId != null ? { assetId } : {} }),
+  create: (order, signature) => api.post("/orders", { order, signature }),
+  cancel: (orderHash) => api.post(`/orders/${orderHash}/cancel`),
+  stale: () => api.get("/orders/stale"),
+};
+
+export const salesAPI = {
+  list: () => api.get("/sales"),
+  get: (offerId, address) => api.get(`/sales/${offerId}`, { params: address ? { address } : {} }),
+  vote: (offerId, support, signature) => api.post(`/sales/${offerId}/votes`, { support, signature }),
+  payout: (offerId, address) => api.get(`/sales/${offerId}/payout/${address}`),
+  open: (offerId) => api.post(`/sales/${offerId}/open`),
+  relayVotes: (offerId) => api.post(`/sales/${offerId}/relay-votes`),
+  finalize: (offerId) => api.post(`/sales/${offerId}/finalize`),
+  confirm: (offerId) => api.post(`/sales/${offerId}/confirm`),
+  cancel: (offerId) => api.post(`/sales/${offerId}/cancel`),
+};
+
+// Admin-only gas analytics (the token is attached by the interceptor above).
+export const gasAPI = {
+  getSummary: () => api.get('/gas/summary'),
+  getBenchmark: () => api.get('/gas/benchmark'),
+  getOptimizations: () => api.get('/gas/optimizations'),
+  getScenario: () => api.get('/gas/scenario'),
+  getTransactions: (params) => api.get('/gas/transactions', { params }),
+  sync: () => api.post('/gas/sync'),
+};
+
 export default api;

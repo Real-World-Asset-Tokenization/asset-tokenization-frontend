@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Hexagon, LayoutDashboard, ShieldCheck, Activity, Building2, PlusCircle, Coins, Wallet,
   ShoppingBag, Search, PanelLeftClose, PanelLeftOpen, Menu, X, LogOut, ChevronDown,
-  TrendingUp, Gift, Users, Scale, ClipboardCheck, Banknote, Fuel, Tag, Sun, Moon, Settings,
+  TrendingUp, Gift, Users, Scale, ClipboardCheck, Banknote, Fuel, Tag, Sun, Moon, Settings, Gavel,
 } from "lucide-react";
 import Navbar from "../Navbar";
 import { ShellContext } from "./shellContext";
@@ -29,6 +29,7 @@ const NAV_BY_ROLE = {
         { to: "/owner/release", label: "Release Tokens", icon: Tag },
         { to: "/owner/portfolio", label: "Holdings & Valuations", icon: Wallet },
         { to: "/marketplace", label: "Marketplace", icon: ShoppingBag },
+        { to: "/sales", label: "Property Sales", icon: Gavel },
       ] },
       { title: "Account", items: [{ to: "/settings", label: "Settings", icon: Settings }] },
     ],
@@ -41,6 +42,7 @@ const NAV_BY_ROLE = {
       { title: "Invest", items: [
         { to: "/marketplace", label: "Marketplace", icon: ShoppingBag },
         { to: "/portfolio", label: "My Portfolio", icon: Wallet },
+        { to: "/sales", label: "Property Sales", icon: Gavel },
       ] },
       { title: "Returns", items: [
         { to: "/profit-dashboard", label: "Returns", icon: TrendingUp },
@@ -62,7 +64,8 @@ const NAV_BY_ROLE = {
         { to: "/valuations/approvals", label: "Valuation Approvals", icon: ClipboardCheck },
       ] },
       { title: "Operations", items: [
-        { to: "/gas-analytics", label: "Gas Analytics", icon: Fuel },
+        { to: "/sales", label: "Property Sales", icon: Gavel },
+        { to: "/gas-analytics", label: "Gas Analytics", icon: Fuel, adminOnly: true },
         { to: "/marketplace", label: "Marketplace", icon: ShoppingBag },
       ] },
       { title: "Account", items: [{ to: "/settings", label: "Settings", icon: Settings }] },
@@ -135,7 +138,7 @@ export default function AppShell({ children }) {
           <div key={group.title}>
             {(!collapsed || isMobile) && <p className="px-3 mb-2 text-[11px] font-semibold tracking-widest text-[#6b7599] uppercase">{group.title}</p>}
             <ul className="space-y-1">
-              {group.items.map(({ to, label, icon: Icon }) => (
+              {group.items.filter((item) => !item.adminOnly || user?.role === "admin").map(({ to, label, icon: Icon }) => (
                 <li key={to}>
                   <NavLink
                     to={to}

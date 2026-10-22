@@ -7,10 +7,10 @@ import { useCurrency } from "../../context/CurrencyContext";
 import { resolveUserWallet } from "../../lib/walletResolver";
 import { useMarketplaceData, isActiveOffer } from "../../lib/marketplaceData";
 import { getContracts, trackTxGas } from "../../services/contractService";
+import { ordersAPI } from "../../lib/api";
 import { loadTradeHistory } from "../../services/tokenSales";
 import { arrowOf, pctText, dirOf } from "../../lib/marketStats";
 import StockChart from "../../components/market/StockChart";
-import { lkr } from "../../lib/lkr";
 import { Card, Skeleton, Badge, pageClass, fmtDate } from "../../components/ui/dash";
 
 const PRICE_WARNING_RATIO = 0.5;
@@ -72,6 +72,8 @@ export default function CreateListing({ mode = "sell" }) {
   const [price, setPrice] = useState("");
   const [days, setDays] = useState(30);
   const [priceMode, setPriceMode] = useState("approved"); // "approved" | "custom"
+  // Sign the offer off-chain instead of publishing it as a transaction: no listing gas for the seller.
+  const [gasless, setGasless] = useState(true);
   const [trades, setTrades] = useState(null);
   const [step, setStep] = useState(""); // "" | "approve" | "list" | "done"
   const [error, setError] = useState("");
@@ -95,8 +97,11 @@ export default function CreateListing({ mode = "sell" }) {
     return () => { cancelled = true; };
   }, [tokenId, offersKey]);
   useEffect(() => {
-    setAmount(""); setError("");
-    if (tokenId && !release) { const next = new URLSearchParams(params); next.set("asset", tokenId); setParams(next, { replace: true }); }
+    // "Update price" in My sales sends the unsold amount here, so the seller only re-confirms the new price.
+    const preset = params.get("amount");
+    setAmount(preset || ""); setError("");
+    if (preset) { const next = new URLSearchParams(params); next.delete("amount"); if (tokenId && !release) next.set("asset", tokenId); setParams(next, { replace: true }); }
+    else if (tokenId && !release) { const next = new URLSearchParams(params); next.set("asset", tokenId); setParams(next, { replace: true }); }
   }, [tokenId]);
 
   const qty = Number(amount);
@@ -117,6 +122,10 @@ export default function CreateListing({ mode = "sell" }) {
   const fee = feeBps != null ? gross * feeBps / 10000 : null;
   const gap = refUsd && priceValid ? unit / refUsd - 1 : null;
   const busy = step === "approve" || step === "list";
+  // At the approved price the offer has no fixed price: the contract works it out when someone buys,
+  // so it moves with every revaluation. That needs a signed offer, so it is always gasless.
+  const follow = priceMode === "approved" && refUsd != null;
+  const useSigned = gasless || follow;
   const round2 = (n) => String(Math.max(0.01, Math.round(n * 100) / 100));
 
   const submit = async (e) => {
@@ -127,6 +136,54 @@ export default function CreateListing({ mode = "sell" }) {
       setStep("approve");
       const { tokenMarketplaceContract, tokenContract, addrs, runner } = await getContracts(true);
       const signer = await runner.getAddress();
+
+      if (useSigned) {
+        if ((await tokenContract.balanceOf(signer, asset.tokenId)) < BigInt(qty)) {
+          throw new Error("Your wallet no longer holds enough tokens. Refresh and reduce the quantity.");
+        }
+        // The marketplace needs permission to move the tokens once, when somebody buys.
+        if (!(await tokenContract.isApprovedForAll(signer, addrs.tokenMarketplaceAddress))) {
+          await (await tokenContract.setApprovalForAll(addrs.tokenMarketplaceAddress, true)).wait();
+        }
+        setStep("list");
+        const order = {
+          seller: signer,
+          assetId: String(asset.tokenId),
+          amount: String(qty),
+          ...(follow
+            ? { premiumBps: "0", floorPrice: "0" }
+            : { pricePerToken: ethers.parseUnits(unit.toFixed(6), 6).toString() }),
+          paymentToken: addrs.paymentTokenAddress,
+          expiry: String(release ? 0 : Math.floor(Date.now() / 1000) + days * 86400),
+          salt: String(BigInt(Date.now()) * 1000n + BigInt(Math.floor(Math.random() * 1000))),
+        };
+        const chainId = (await runner.provider.getNetwork()).chainId;
+        const signature = await runner.signTypedData(
+          { name: "TokenMarketplace", version: "1", chainId, verifyingContract: addrs.tokenMarketplaceAddress },
+          follow
+            ? {
+              FollowOrder: [
+                { name: "seller", type: "address" }, { name: "assetId", type: "uint256" }, { name: "amount", type: "uint256" },
+                { name: "premiumBps", type: "int256" }, { name: "floorPrice", type: "uint256" }, { name: "paymentToken", type: "address" },
+                { name: "expiry", type: "uint256" }, { name: "salt", type: "uint256" },
+              ],
+            }
+            : {
+              Order: [
+                { name: "seller", type: "address" }, { name: "assetId", type: "uint256" }, { name: "amount", type: "uint256" },
+                { name: "pricePerToken", type: "uint256" }, { name: "paymentToken", type: "address" },
+                { name: "expiry", type: "uint256" }, { name: "salt", type: "uint256" },
+              ],
+            },
+          order,
+        );
+        const saved = await ordersAPI.create(order, signature);
+        setResult({ hash: saved.data.data.orderHash, listingId: null, offchain: true, qty, unit, name: asset.name, gross, fee });
+        setStep("done");
+        reload();
+        return;
+      }
+
       if ((await tokenMarketplaceContract.assetToken()).toLowerCase() !== addrs.tokenAddress.toLowerCase()) {
         throw new Error("The marketplace and token contracts do not match. Update the deployment configuration.");
       }
@@ -211,7 +268,7 @@ export default function CreateListing({ mode = "sell" }) {
                 <div className="flex justify-between border-t border-[#1b2440] pt-2"><dt className="text-white font-semibold">You would receive</dt><dd className="font-bold text-emerald-300">{formatMUSD(result.gross - result.fee)}</dd></div>
               </dl>
             )}
-            <p className="text-xs text-[#98a2c3] font-mono break-all max-w-xl">Receipt (transaction ID): {result.hash}</p>
+            <p className="text-xs text-[#98a2c3] font-mono break-all max-w-xl">{result.offchain ? "Order ID (signed off-chain, no listing transaction was sent): " : "Receipt (transaction ID): "}{result.hash}</p>
             <div className="flex flex-wrap justify-center gap-3 mt-1">
               <Link to="/marketplace?tab=mine" className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-semibold text-sm text-white">{release ? "See it on the marketplace" : "View my offers"}</Link>
               <button onClick={() => { setStep(""); setResult(null); setAmount(""); }} className="px-5 py-2.5 rounded-xl border border-[#1b2440] bg-[#0e1426] hover:bg-[#141c33] font-semibold text-sm text-white">{release ? "Release more" : "Create another"}</button>
@@ -316,7 +373,8 @@ export default function CreateListing({ mode = "sell" }) {
                     className="w-full bg-transparent text-xl font-semibold text-white tabular-nums outline-none disabled:opacity-70" />
                   {gap != null && <span className="text-xs font-semibold whitespace-nowrap tabular-nums" style={{ color: gap > 0 ? "var(--up)" : gap < 0 ? "var(--down)" : "var(--ink-3)" }}>{gap > 0 ? "▲" : gap < 0 ? "▼" : ""} {Math.abs(gap * 100).toFixed(0)}%</span>}
                 </div>
-                <p className="mt-1 text-xs text-[#98a2c3]">{priceValid ? `≈ ${lkr(String(Math.round(convert(unit, "USD", "LKR"))))} per token` : "Enter a price above zero"}{gap != null && Math.abs(gap) > PRICE_WARNING_RATIO ? " · buyers will see a warning" : ""}</p>
+                {priceMode === "approved" && refUsd != null && <p className="mt-1 text-xs text-[#98a2c3]">This offer follows the property's approved price. If the property is revalued, the price changes with it automatically. Buyers pay the approved price at the moment they buy.</p>}
+                <p className="mt-1 text-xs text-[#98a2c3]">{priceValid ? `≈ ${formatMUSD(unit, { showCode: true })} per token${follow ? " today" : ""}` : "Enter a price above zero"}{gap != null && Math.abs(gap) > PRICE_WARNING_RATIO ? " · buyers will see a warning" : ""}</p>
               </div>
               {!release && (
                 <div role="group" aria-label="Offer duration" className="flex gap-1 rounded-2xl bg-[#1b1c1f] p-1">
@@ -324,6 +382,14 @@ export default function CreateListing({ mode = "sell" }) {
                 </div>
               )}
             </div>
+
+            <label className="flex items-start gap-3 rounded-2xl bg-[#17181a] p-3 cursor-pointer">
+              <input type="checkbox" checked={useSigned} onChange={(e) => setGasless(e.target.checked)} disabled={busy || follow} className="mt-1 accent-indigo-500" />
+              <span className="text-sm">
+                <span className="block font-semibold text-white">Sign without paying gas</span>
+                <span className="block text-xs text-[#98a2c3] leading-relaxed">You sign the offer in MetaMask and nothing is sent to the blockchain. The buyer pays the network fee when they buy. {follow ? "An offer at the approved price is always signed this way, so it can follow the price." : "Turn off to publish an on-chain offer instead."}</span>
+              </span>
+            </label>
 
             <dl className="space-y-2.5 text-sm px-1">
               <Row k="Buyers pay" v={ready ? formatMUSD(gross) : "—"} />
@@ -339,14 +405,14 @@ export default function CreateListing({ mode = "sell" }) {
             {busy && (
               <ol className="space-y-2 text-sm rounded-xl bg-[#1b1c1f] p-3.5" role="status">
                 <Step on={step === "approve"} done={step === "list"}>Allow the marketplace to move your tokens when they sell</Step>
-                <Step on={step === "list"}>Publish the {release ? "release" : "offer"} on the blockchain</Step>
+                <Step on={step === "list"}>{useSigned ? `Sign the ${release ? "release" : "offer"} in MetaMask (free, nothing is sent)` : `Publish the ${release ? "release" : "offer"} on the blockchain`}</Step>
               </ol>
             )}
             {error && <p role="alert" className="text-sm text-rose-300 flex gap-2"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />{error}</p>}
 
             <button type="submit" disabled={busy || !ready}
               className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 py-4 text-base font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed">
-              {busy ? "Confirm in MetaMask…" : <>{copy.submit} <ArrowRight className="w-4 h-4" /></>}
+              {busy ? (useSigned ? "Sign in MetaMask…" : "Confirm in MetaMask…") : <>{copy.submit} <ArrowRight className="w-4 h-4" /></>}
             </button>
 
             {/* token usage, like margin usage */}

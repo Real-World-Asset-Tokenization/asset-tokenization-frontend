@@ -408,7 +408,6 @@ export default function Home() {
         <footer className="mt-20 mb-10 flex flex-wrap gap-x-6 gap-y-2 justify-center text-xs text-[#8e8f98] px-4">
           <Link to="/portfolio" className="hover:text-white">Investor portfolio</Link>
           <Link to="/profit-dashboard" className="hover:text-white">Returns</Link>
-          <Link to="/gas-analytics" className="hover:text-white">Gas benchmarks</Link>
           <Link to="/login" className="hover:text-white">Log in</Link>
         </footer>
       </main>
