@@ -1018,7 +1018,7 @@ export default function AssetOwnerDashboard() {
 
                                     {/* Owner Consent */}
                                     <div className="relative">
-                                      {asset.tokenizationConsent ? (
+                                      {asset.tokenizationConsent || asset.status === 'ready_for_tokenization' || asset.status === 'Tokenized' ? (
                                         <span className="absolute -left-6 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 ring-4 ring-green-500/15">
                                           <CheckIcon className="h-2.5 w-2.5 text-white" />
                                         </span>
@@ -1032,7 +1032,7 @@ export default function AssetOwnerDashboard() {
 
                                     {/* SPV Creation */}
                                     <div className="relative">
-                                      {asset.spvCreated ? (
+                                      {asset.spvCreated || asset.status === 'ready_for_tokenization' || asset.status === 'Tokenized' ? (
                                         <span className="absolute -left-6 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 ring-4 ring-green-500/15">
                                           <CheckIcon className="h-2.5 w-2.5 text-white" />
                                         </span>
@@ -1046,7 +1046,7 @@ export default function AssetOwnerDashboard() {
 
                                     {/* Ownership Transfer */}
                                     <div className="relative">
-                                      {asset.ownershipTransferred ? (
+                                      {asset.ownershipTransferred || asset.status === 'ready_for_tokenization' || asset.status === 'Tokenized' ? (
                                         <span className="absolute -left-6 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 ring-4 ring-green-500/15">
                                           <CheckIcon className="h-2.5 w-2.5 text-white" />
                                         </span>
