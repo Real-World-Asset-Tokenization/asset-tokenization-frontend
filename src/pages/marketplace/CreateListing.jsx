@@ -300,7 +300,7 @@ export default function CreateListing({ mode = "sell" }) {
                   <p className="text-2xl font-bold tabular-nums" style={{ color: last != null ? tone : "var(--ink-3)" }}>{last != null ? formatMUSD(last) : "No trades"}</p>
                   {lastChange != null && <p className="text-xs font-semibold" style={{ color: tone }}>{arrowOf(lastChange)} {pctText(lastChange)}</p>}
                 </div>
-                {[["Approved price", refUsd != null ? formatMUSD(refUsd) : "—"], ["Lowest ask", lowestAsk != null ? formatMUSD(lowestAsk) : "None"], ["Your free tokens", asset ? asset.free.toLocaleString() : "—"], [`Total ${copy.past}`, asset ? `${asset.offered.toLocaleString()} (${percent(asset.offered)})` : "—"], ["Total supply", supply.toLocaleString()]].map(([k, v]) => (
+                {[["Approved price", refUsd != null ? formatMUSD(refUsd) : "—"], ["Lowest selling price", lowestAsk != null ? formatMUSD(lowestAsk) : "None"], ["Your free tokens", asset ? asset.free.toLocaleString() : "—"], [`Total ${copy.past}`, asset ? `${asset.offered.toLocaleString()} (${percent(asset.offered)})` : "—"], ["Total supply", supply.toLocaleString()]].map(([k, v]) => (
                   <div key={k}><p className="text-xs text-[#98a2c3]">{k}</p><p className="text-base font-semibold text-white tabular-nums">{v}</p></div>
                 ))}
               </div>

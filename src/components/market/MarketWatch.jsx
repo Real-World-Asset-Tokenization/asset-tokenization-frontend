@@ -154,7 +154,7 @@ export default function MarketWatch({ assets, trades, listings, reference = {}, 
                   <th className={`${th} text-right`}>Change</th>
                   <th className={th}>Trend</th>
                   {!compact && <th className={`${th} text-right`}>Volume</th>}
-                  <th className={`${th} text-right`}>Lowest ask</th>
+                  <th className={`${th} text-right`}>Lowest selling price</th>
                   {!compact && <th className={`${th} text-right`}>Approved value</th>}
                   <th className={th}><span className="sr-only">Trade</span></th>
                 </tr>
