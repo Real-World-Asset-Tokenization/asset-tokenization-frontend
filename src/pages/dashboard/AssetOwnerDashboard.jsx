@@ -72,6 +72,13 @@ const UserIcon = ({ className = 'h-5 w-5' }) => (
   </svg>
 );
 
+const MapPinIcon = ({ className = 'h-5 w-5' }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+  </svg>
+);
+
 /* Shared decorative class strings */
 const inputClass =
   'w-full rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 transition focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500/60 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-100 dark:placeholder-zinc-500';
@@ -98,6 +105,10 @@ export default function AssetOwnerDashboard() {
     assetType: 'real_estate',
     valuation: '',
     currency: 'USD',
+    location: '',
+    latitude: null,
+    longitude: null,
+    address: '',
   });
   const [assetFiles, setAssetFiles] = useState({
     deed: null,
@@ -106,6 +117,8 @@ export default function AssetOwnerDashboard() {
     priorDeeds: null,
     certificates: null,
   });
+  const [assetImages, setAssetImages] = useState([]);
+  const [fetchingLocation, setFetchingLocation] = useState(false);
   const [assetUploading, setAssetUploading] = useState(false);
   const [verifyingAssetId, setVerifyingAssetId] = useState(null);
   const [expandedAssetId, setExpandedAssetId] = useState(null);
@@ -232,6 +245,53 @@ export default function AssetOwnerDashboard() {
     navigate('/login');
   };
 
+  const handleFetchLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setFetchingLocation(true);
+    setError('');
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+
+        // Use reverse geocoding to get address (using OpenStreetMap Nominatim API)
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+          );
+          const data = await response.json();
+
+          setAssetUploadData({
+            ...assetUploadData,
+            latitude: latitude.toString(),
+            longitude: longitude.toString(),
+            address: data.display_name || '',
+            location: data.display_name || `${latitude}, ${longitude}`,
+          });
+        } catch (err) {
+          // If geocoding fails, just use coordinates
+          setAssetUploadData({
+            ...assetUploadData,
+            latitude: latitude.toString(),
+            longitude: longitude.toString(),
+            location: `${latitude}, ${longitude}`,
+          });
+        } finally {
+          setFetchingLocation(false);
+        }
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+        setError('Unable to retrieve your location. Please enter it manually.');
+        setFetchingLocation(false);
+      }
+    );
+  };
+
   const handleAssetUpload = async (e) => {
     e.preventDefault();
 
@@ -249,6 +309,10 @@ export default function AssetOwnerDashboard() {
     formData.append('assetType', assetUploadData.assetType);
     formData.append('valuation', assetUploadData.valuation);
     formData.append('currency', assetUploadData.currency);
+    formData.append('location', assetUploadData.location);
+    formData.append('latitude', assetUploadData.latitude || '');
+    formData.append('longitude', assetUploadData.longitude || '');
+    formData.append('address', assetUploadData.address || '');
 
     // Add required documents
     if (assetFiles.deed) formData.append('deed', assetFiles.deed);
@@ -258,6 +322,11 @@ export default function AssetOwnerDashboard() {
     if (assetFiles.extracts) formData.append('extracts', assetFiles.extracts);
     if (assetFiles.priorDeeds) formData.append('priorDeeds', assetFiles.priorDeeds);
     if (assetFiles.certificates) formData.append('certificates', assetFiles.certificates);
+
+    // Add asset images (up to 5)
+    assetImages.forEach((image) => {
+      formData.append('images', image);
+    });
 
     try {
       const response = await kycAPI.uploadAsset(formData);
@@ -269,6 +338,10 @@ export default function AssetOwnerDashboard() {
         assetType: 'real_estate',
         valuation: '',
         currency: 'USD',
+        location: '',
+        latitude: null,
+        longitude: null,
+        address: '',
       });
       setAssetFiles({
         deed: null,
@@ -277,6 +350,7 @@ export default function AssetOwnerDashboard() {
         priorDeeds: null,
         certificates: null,
       });
+      setAssetImages([]);
 
       // Refresh assets list
       await fetchAssets();
@@ -782,6 +856,90 @@ export default function AssetOwnerDashboard() {
                       <option value="NGN">NGN</option>
                     </select>
                   </div>
+                </div>
+
+                <div>
+                  <label className={labelClass}>Location</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={assetUploadData.location}
+                      onChange={(e) => setAssetUploadData({ ...assetUploadData, location: e.target.value })}
+                      placeholder="Enter asset location"
+                      className={inputClass}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={handleFetchLocation}
+                      disabled={fetchingLocation}
+                      className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      title="Get current location"
+                    >
+                      {fetchingLocation ? (
+                        <>
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                          Locating...
+                        </>
+                      ) : (
+                        <>
+                          <MapPinIcon className="h-4 w-4" />
+                          Get Location
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  {assetUploadData.latitude && assetUploadData.longitude && (
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                      Coordinates: {assetUploadData.latitude}, {assetUploadData.longitude}
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/60 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Asset Images (up to 5)
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files);
+                      if (files.length > 5) {
+                        setError('Maximum 5 images allowed');
+                        return;
+                      }
+                      setAssetImages(files);
+                    }}
+                    className={fileClass}
+                  />
+                  {assetImages.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {assetImages.map((file, index) => (
+                        <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden border border-zinc-300">
+                          <img
+                            src={URL.createObjectURL(file)}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newImages = assetImages.filter((_, i) => i !== index);
+                              setAssetImages(newImages);
+                            }}
+                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    {assetImages.length}/5 images selected
+                  </p>
                 </div>
 
                 <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/60 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
