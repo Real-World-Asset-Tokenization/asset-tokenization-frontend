@@ -60,6 +60,16 @@ export const kycAPI = {
     });
   },
 
+  reuploadKYCDocuments: (formData) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return axios.post(`${API_URL}/kyc/reupload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        Authorization: `Bearer ${user.token}`,
+      },
+    });
+  },
+
   verifyKYC: () => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     return axios.post(`${API_URL}/kyc/verify`, {}, {
@@ -134,6 +144,16 @@ export const kycAPI = {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     return axios.post(`${API_URL}/assets/verify/${assetId}`, {}, {
       headers: {
+        Authorization: `Bearer ${user.token}`,
+      },
+    });
+  },
+
+  reuploadAssetDocuments: (assetId, formData) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return axios.post(`${API_URL}/assets/${assetId}/reupload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
         Authorization: `Bearer ${user.token}`,
       },
     });
