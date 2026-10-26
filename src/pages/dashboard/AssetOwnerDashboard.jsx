@@ -126,6 +126,24 @@ export default function AssetOwnerDashboard() {
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [consentingAssetId, setConsentingAssetId] = useState(null);
   const [consenting, setConsenting] = useState(false);
+  const [showReuploadModal, setShowReuploadModal] = useState(false);
+  const [reuploadingAssetId, setReuploadingAssetId] = useState(null);
+  const [reuploading, setReuploading] = useState(false);
+  const [reuploadFiles, setReuploadFiles] = useState({
+    deed: null,
+    surveyPlan: null,
+    extracts: null,
+    priorDeeds: null,
+    certificates: null,
+  });
+  const [reuploadImages, setReuploadImages] = useState([]);
+  const [showKYCReuploadModal, setShowKYCReuploadModal] = useState(false);
+  const [reuploadingKYC, setReuploadingKYC] = useState(false);
+  const [kycReuploadFiles, setKycReuploadFiles] = useState({
+    document: null,
+    selfie: null,
+  });
+  const [kycReuploadIdNumber, setKycReuploadIdNumber] = useState('');
 
   useEffect(() => {
     fetchKYCStatus();
@@ -439,6 +457,114 @@ export default function AssetOwnerDashboard() {
     } finally {
       setVerifyingAssetId(null);
     }
+  };
+
+  const handleReuploadClick = (assetId) => {
+    setReuploadingAssetId(assetId);
+    setReuploadFiles({
+      deed: null,
+      surveyPlan: null,
+      extracts: null,
+      priorDeeds: null,
+      certificates: null,
+    });
+    setReuploadImages([]);
+    setShowReuploadModal(true);
+  };
+
+  const handleConfirmReupload = async () => {
+    if (!reuploadingAssetId) return;
+
+    setReuploading(true);
+    setError('');
+
+    try {
+      const formData = new FormData();
+
+      // Add documents
+      if (reuploadFiles.deed) formData.append('deed', reuploadFiles.deed);
+      if (reuploadFiles.surveyPlan) formData.append('surveyPlan', reuploadFiles.surveyPlan);
+      if (reuploadFiles.extracts) formData.append('extracts', reuploadFiles.extracts);
+      if (reuploadFiles.priorDeeds) formData.append('priorDeeds', reuploadFiles.priorDeeds);
+      if (reuploadFiles.certificates) formData.append('certificates', reuploadFiles.certificates);
+
+      // Add images
+      reuploadImages.forEach((image) => {
+        formData.append('images', image);
+      });
+
+      const response = await kycAPI.reuploadAssetDocuments(reuploadingAssetId, formData);
+      setShowReuploadModal(false);
+      setReuploadingAssetId(null);
+
+      // Refresh assets
+      await fetchAssets();
+
+      alert('Documents re-uploaded successfully! Please run verification again.');
+    } catch (err) {
+      console.error('Re-upload error:', err);
+      setError(err.response?.data?.message || 'Failed to re-upload documents');
+    } finally {
+      setReuploading(false);
+    }
+  };
+
+  const handleCancelReupload = () => {
+    setShowReuploadModal(false);
+    setReuploadingAssetId(null);
+    setReuploadFiles({
+      deed: null,
+      surveyPlan: null,
+      extracts: null,
+      priorDeeds: null,
+      certificates: null,
+    });
+    setReuploadImages([]);
+  };
+
+  const handleKYCReuploadClick = () => {
+    setKycReuploadFiles({
+      document: null,
+      selfie: null,
+    });
+    setKycReuploadIdNumber(kycStatus?.idNumber || '');
+    setShowKYCReuploadModal(true);
+  };
+
+  const handleConfirmKYCReupload = async () => {
+    setReuploadingKYC(true);
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('idType', 'national_id');
+      formData.append('idNumber', kycReuploadIdNumber);
+
+      if (kycReuploadFiles.document) formData.append('document', kycReuploadFiles.document);
+      if (kycReuploadFiles.selfie) formData.append('selfie', kycReuploadFiles.selfie);
+
+      const response = await kycAPI.reuploadKYCDocuments(formData);
+      setShowKYCReuploadModal(false);
+
+      // Refresh KYC status
+      await fetchKYCStatus();
+
+      alert('KYC documents re-uploaded successfully! Please run verification again.');
+    } catch (err) {
+      console.error('KYC re-upload error:', err);
+      setError(err.response?.data?.message || 'Failed to re-upload KYC documents');
+    } finally {
+      setReuploadingKYC(false);
+    }
+  };
+
+  const handleCancelKYCReupload = () => {
+    setShowKYCReuploadModal(false);
+    setKycReuploadFiles({
+      document: null,
+      selfie: null,
+    });
+    setKycReuploadIdNumber('');
   };
 
   const toggleAssetExpansion = (assetId) => {
@@ -759,6 +885,16 @@ export default function AssetOwnerDashboard() {
                     </>
                   )}
                 </button>
+
+                {(kycStatus?.verificationStatus === 'rejected' || kycStatus?.verificationStatus === 'under_review') && (
+                  <button
+                    onClick={handleKYCReuploadClick}
+                    className="inline-flex items-center gap-2 rounded-xl bg-orange-600 hover:bg-orange-700 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-orange-500/25 transition-all hover:shadow-lg hover:shadow-orange-500/35 hover:brightness-110 active:scale-[0.98]"
+                  >
+                    <UploadIcon className="h-4 w-4" />
+                    Re-upload Documents
+                  </button>
+                )}
 
                 <button
                   onClick={fetchKYCStatus}
@@ -1116,6 +1252,16 @@ export default function AssetOwnerDashboard() {
                             Proceed with Tokenization
                           </button>
                         )}
+
+                        {(asset.verificationStatus === 'rejected' || asset.verificationStatus === 'under_review') && (
+                          <button
+                            onClick={() => handleReuploadClick(asset.assetId)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-all active:scale-[0.98]"
+                          >
+                            <UploadIcon className="h-3.5 w-3.5" />
+                            Re-upload Documents
+                          </button>
+                        )}
                       </div>
 
                       {expandedAssetId === asset.assetId && (
@@ -1304,6 +1450,244 @@ export default function AssetOwnerDashboard() {
                 <button
                   onClick={handleCancelConsent}
                   disabled={consenting}
+                  className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Re-upload Modal                                                      */}
+      {/* ------------------------------------------------------------------ */}
+      {showReuploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200/60 bg-white shadow-2xl dark:border-zinc-700/60 dark:bg-zinc-900">
+            <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500" />
+            <div className="p-6">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg shadow-orange-500/25">
+                  <UploadIcon className="h-5 w-5" />
+                </div>
+                <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
+                  Re-upload Documents
+                </h2>
+              </div>
+
+              <p className="mb-4 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                Your asset verification failed. Please re-upload the required documents to try again.
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <label className={labelClass}>
+                    Deed Document <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setReuploadFiles({ ...reuploadFiles, deed: e.target.files?.[0] })}
+                    className={fileClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>
+                    Survey Plan <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setReuploadFiles({ ...reuploadFiles, surveyPlan: e.target.files?.[0] })}
+                    className={fileClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={`${labelClass} flex items-center gap-2`}>
+                    Extracts
+                    <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                      Optional
+                    </span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setReuploadFiles({ ...reuploadFiles, extracts: e.target.files?.[0] })}
+                    className={fileClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={`${labelClass} flex items-center gap-2`}>
+                    Prior Deeds
+                    <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                      Optional
+                    </span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setReuploadFiles({ ...reuploadFiles, priorDeeds: e.target.files?.[0] })}
+                    className={fileClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={`${labelClass} flex items-center gap-2`}>
+                    Certificates
+                    <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                      Optional
+                    </span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setReuploadFiles({ ...reuploadFiles, certificates: e.target.files?.[0] })}
+                    className={fileClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Asset Images (up to 5)</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files);
+                      if (files.length > 5) {
+                        setError('Maximum 5 images allowed');
+                        return;
+                      }
+                      setReuploadImages(files);
+                    }}
+                    className={fileClass}
+                  />
+                  {reuploadImages.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {reuploadImages.map((file, index) => (
+                        <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden border border-zinc-300">
+                          <img
+                            src={URL.createObjectURL(file)}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newImages = reuploadImages.filter((_, i) => i !== index);
+                              setReuploadImages(newImages);
+                            }}
+                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    {reuploadImages.length}/5 images selected
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex gap-3">
+                <button
+                  onClick={handleConfirmReupload}
+                  disabled={reuploading || !reuploadFiles.deed || !reuploadFiles.surveyPlan}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-orange-500/25 transition-all hover:shadow-lg hover:shadow-orange-500/35 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                >
+                  {reuploading ? 'Uploading…' : 'Re-upload & Verify'}
+                </button>
+                <button
+                  onClick={handleCancelReupload}
+                  disabled={reuploading}
+                  className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* KYC Re-upload Modal                                                  */}
+      {/* ------------------------------------------------------------------ */}
+      {showKYCReuploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200/60 bg-white shadow-2xl dark:border-zinc-700/60 dark:bg-zinc-900">
+            <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500" />
+            <div className="p-6">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg shadow-orange-500/25">
+                  <UploadIcon className="h-5 w-5" />
+                </div>
+                <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
+                  Re-upload KYC Documents
+                </h2>
+              </div>
+
+              <p className="mb-4 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                Your KYC verification failed. Please re-upload your documents to try again.
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <label className={labelClass}>ID Number</label>
+                  <input
+                    type="text"
+                    value={kycReuploadIdNumber}
+                    onChange={(e) => setKycReuploadIdNumber(e.target.value)}
+                    placeholder="Enter your ID number"
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={`${labelClass} flex items-center gap-2`}>
+                    <DocumentIcon className="h-4 w-4 text-blue-500" />
+                    ID Document
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setKycReuploadFiles({ ...kycReuploadFiles, document: e.target.files?.[0] })}
+                    className={fileClass}
+                  />
+                </div>
+
+                <div>
+                  <label className={`${labelClass} flex items-center gap-2`}>
+                    <PhotoIcon className="h-4 w-4 text-blue-500" />
+                    Selfie
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setKycReuploadFiles({ ...kycReuploadFiles, selfie: e.target.files?.[0] })}
+                    className={fileClass}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex gap-3">
+                <button
+                  onClick={handleConfirmKYCReupload}
+                  disabled={reuploadingKYC || !kycReuploadIdNumber}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-orange-500/25 transition-all hover:shadow-lg hover:shadow-orange-500/35 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                >
+                  {reuploadingKYC ? 'Uploading…' : 'Re-upload & Verify'}
+                </button>
+                <button
+                  onClick={handleCancelKYCReupload}
+                  disabled={reuploadingKYC}
                   className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
                 >
                   Cancel
