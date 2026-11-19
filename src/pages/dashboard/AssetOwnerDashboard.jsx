@@ -34,6 +34,7 @@ import {
   ArrowRight,
   RefreshCw
 } from "lucide-react";
+import { API_BASE_URL } from "../../lib/config";
 
 // Inside the owner workspace this page serves several sidebar entries:
 //   view="assets" (My Assets), view="assets" + openNew (Submit Asset),
@@ -142,7 +143,7 @@ export default function AssetOwnerDashboard({ view = "assets", openNew = false }
     setAssetLoading(true);
     try {
       // Fetch real registered assets from backend database API filtered by owner
-      const res = await fetch("http://localhost:5001/api/assets/owned", {
+      const res = await fetch(`${API_BASE_URL}/assets/owned`, {
         headers: { Authorization: `Bearer ${user.token}` },
       });
       const data = await res.json();

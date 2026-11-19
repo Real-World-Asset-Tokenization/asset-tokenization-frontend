@@ -1,7 +1,8 @@
 import { ethers } from "ethers";
 import { getContracts, checkAndSwitchNetwork, trackTxGas } from "./contractService";
+import { API_BASE_URL, authHeaders } from "../lib/config";
 
-const API_BASE = "http://localhost:5001/api/tokenization";
+const API_BASE = `${API_BASE_URL}/tokenization`;
 
 /**
  * Fetch verified assets eligible for tokenization
@@ -77,8 +78,8 @@ export async function confirmTokenizationOnBackend(assetId, txHash, ownerWallet)
   try {
     const res = await fetch(`${API_BASE}/confirm`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assetId: Number(assetId), txHash, ownerWallet }),
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ assetId: Number(assetId), txHash }),
     });
     const json = await res.json();
     if (!json.success) throw new Error(json.error || "Reconciliation failed on backend");

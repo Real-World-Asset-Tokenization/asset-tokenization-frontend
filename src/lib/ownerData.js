@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { authAPI, kycAPI } from "./api";
 import { valuationApi } from "../services/valuationApi";
+import { API_BASE_URL } from "./config";
 
 // Asset status as the owner should see it, from the stored record.
 export function assetStage(a) {
@@ -60,7 +61,7 @@ export function useOwnerData(token) {
     const [me, kyc, assets, chainList] = await Promise.all([
       authAPI.getMe().then((r) => r.data.data.user).catch(() => { errors.me = true; return null; }),
       kycAPI.getKYCStatus().then((r) => r.data?.data || null).catch((e) => { if (e.response?.status !== 404) errors.kyc = true; return null; }),
-      fetch("http://localhost:5001/api/assets/owned", { headers: { Authorization: `Bearer ${token}` } })
+      fetch(`${API_BASE_URL}/assets/owned`, { headers: { Authorization: `Bearer ${token}` } })
         .then((r) => r.json()).then((d) => { if (!d.success) throw new Error(); return d.data; })
         .catch(() => { errors.assets = true; return []; }),
       valuationApi.assets().catch(() => { errors.chain = true; return []; }),

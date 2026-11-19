@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import deployedData from "../contracts/deployedContracts.json";
 import { resolveUserWallet } from "../lib/walletResolver";
+import { API_BASE_URL, authHeaders } from "../lib/config";
 
 export const LOCAL_CHAIN_ID = 31337;
 export const LOCAL_CHAIN_HEX = "0x7a69";
@@ -200,16 +201,11 @@ export async function getPaymentTokenBalance(walletAddress, { throwOnError = fal
 
 export async function trackTxGas(txHash, operationType, payerAddress, payerCategory = "Investor", assetId = null) {
   try {
-    await fetch("http://localhost:5001/api/marketplace/track-tx", {
+    // The backend reads the payer and cost from the transaction itself; only the hash and context are sent.
+    await fetch(`${API_BASE_URL}/marketplace/track-tx`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        txHash,
-        operationType,
-        payerAddress,
-        payerCategory,
-        assetId
-      })
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ txHash, operationType, assetId })
     });
   } catch (err) {
     console.warn("Could not log tx gas to backend:", err);

@@ -8,7 +8,7 @@ import { Input } from '../components/Input';
 const ROLES = [
   ['investor', 'Investor', 'Buy, sell and earn from property tokens.'],
   ['asset_owner', 'Asset owner', 'List your property and tokenize it.'],
-  ['compliance_officer', 'Compliance', 'Review identities and properties.'],
+  // Compliance officers are created by an administrator, not through public sign-up.
 ];
 
 export default function Register() {

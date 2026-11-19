@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { getContracts } from "../services/contractService";
 import { valuationApi } from "../services/valuationApi";
+import { API_BASE_URL } from "./config";
 
-const API = "http://localhost:5001/api/marketplace";
+const API = `${API_BASE_URL}/marketplace`;
 
 // Who is selling an offer: the property's owner (first sale) or another investor (resale).
 export const sellerKind = (offer, ownerWallet) =>

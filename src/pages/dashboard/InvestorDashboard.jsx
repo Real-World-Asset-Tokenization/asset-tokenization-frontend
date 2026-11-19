@@ -32,6 +32,7 @@ import { loadInvestorReturns } from "../../services/investorReturns";
 import { summarizeHoldings, signClass, pct } from "../../lib/portfolioSummary";
 import AddWalletModal from "../../components/AddWalletModal";
 import IdMethodPicker, { idMethod } from "../../components/IdMethodPicker";
+import { API_BASE_URL } from "../../lib/config";
 
 // view="kyc" shows only identity verification (sidebar: KYC Verification).
 export default function InvestorDashboard({ view = "full" }) {
@@ -108,7 +109,7 @@ export default function InvestorDashboard({ view = "full" }) {
       setHoldingsError("");
       const [rows, assetsRes] = await Promise.all([
         loadInvestorReturns(userAddr),
-        fetch("http://localhost:5001/api/assets").then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE_URL}/assets`).then((r) => r.json()).catch(() => null),
       ]);
       const locations = new Map((assetsRes?.data || []).map((a) => [Number(a.blockchainAssetId ?? a.tokenId ?? a.assetId), a.location]));
       const { holdings: held } = summarizeHoldings(rows.filter((r) => r.balance > 0), [], convert);
