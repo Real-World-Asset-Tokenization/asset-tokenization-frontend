@@ -33,6 +33,7 @@ import { summarizeHoldings, signClass, pct } from "../../lib/portfolioSummary";
 import AddWalletModal from "../../components/AddWalletModal";
 import IdMethodPicker, { idMethod } from "../../components/IdMethodPicker";
 import { API_BASE_URL } from "../../lib/config";
+import LivenessDetection from "../../components/LivenessDetection";
 
 // view="kyc" shows only identity verification (sidebar: KYC Verification).
 export default function InvestorDashboard({ view = "full" }) {
@@ -61,6 +62,7 @@ export default function InvestorDashboard({ view = "full" }) {
   const [mUsdBalance, setMUsdBalance] = useState(null);
   const [holdings, setHoldings] = useState([]);
   const [holdingsError, setHoldingsError] = useState("");
+  const [showLivenessModal, setShowLivenessModal] = useState(false);
 
   useEffect(() => {
     fetchKYCStatus();
@@ -198,6 +200,27 @@ export default function InvestorDashboard({ view = "full" }) {
       setSuccessMsg("Selfie photo biometric uploaded successfully!");
     } catch (err) {
       setError(err.response?.data?.message || "Selfie upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleLivenessCapture = async (file, livenessData) => {
+    setUploading(true);
+    setError('');
+
+    const formData = new FormData();
+    formData.append('selfie', file);
+    formData.append('livenessData', JSON.stringify(livenessData));
+
+    try {
+      const response = await kycAPI.uploadSelfie(formData);
+      console.log('Selfie upload response:', response.data);
+      await fetchKYCStatus();
+      setShowLivenessModal(false);
+    } catch (err) {
+      console.error('Selfie upload error:', err);
+      setError(err.response?.data?.message || 'Selfie upload failed');
     } finally {
       setUploading(false);
     }
@@ -572,6 +595,14 @@ export default function InvestorDashboard({ view = "full" }) {
                   <label className="block text-xs font-medium text-zinc-300 mb-1.5">
                     Facial Biometric Photo (Selfie)
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowLivenessModal(true)}
+                    disabled={uploading}
+                    className="mb-2 w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition-colors disabled:opacity-50"
+                  >
+                    {uploading ? "Processing..." : "Capture Live Selfie"}
+                  </button>
                   <input
                     type="file"
                     accept="image/*"
@@ -646,6 +677,16 @@ export default function InvestorDashboard({ view = "full" }) {
         onClose={() => setShowAddWalletModal(false)}
         onSuccess={() => checkWallet()}
       />
+
+      {/* Liveness Detection Modal */}
+      {showLivenessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <LivenessDetection
+            onCapture={handleLivenessCapture}
+            onCancel={() => setShowLivenessModal(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { resolveUserWallet } from "../../lib/walletResolver";
 import { isAssetOwnedByUser } from "../../lib/assetOwnership";
 import Navbar from "../../components/Navbar";
 import AddWalletModal from "../../components/AddWalletModal";
+import LivenessDetection from "../../components/LivenessDetection";
 import IdMethodPicker, { idMethod } from "../../components/IdMethodPicker";
 import {
   Building,
@@ -60,6 +61,7 @@ export default function AssetOwnerDashboard({ view = "assets", openNew = false }
   const [kycStatus, setKycStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [showLivenessModal, setShowLivenessModal] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [idNumber, setIdNumber] = useState("");
   const [idType, setIdType] = useState("national_id");
@@ -312,6 +314,26 @@ export default function AssetOwnerDashboard({ view = "assets", openNew = false }
       setSuccessMsg("Identity document uploaded successfully!");
     } catch (err) {
       setError(err.response?.data?.message || "Document upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleLivenessCapture = async (file, livenessData) => {
+    setUploading(true);
+    setError("");
+
+    const formData = new FormData();
+    formData.append("selfie", file);
+    formData.append("livenessData", JSON.stringify(livenessData));
+
+    try {
+      await kycAPI.uploadSelfie(formData);
+      await fetchKYCStatus();
+      setSuccessMsg("Owner selfie biometric uploaded successfully!");
+      setShowLivenessModal(false);
+    } catch (err) {
+      setError(err.response?.data?.message || "Selfie upload failed");
     } finally {
       setUploading(false);
     }
@@ -984,6 +1006,14 @@ export default function AssetOwnerDashboard({ view = "assets", openNew = false }
                 <label className="block text-xs font-semibold text-zinc-300 mb-1">
                   Owner Live Selfie Biometric
                 </label>
+                <button
+                  type="button"
+                  onClick={() => setShowLivenessModal(true)}
+                  disabled={uploading}
+                  className="mb-2 w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {uploading ? "Processing..." : "Capture Live Selfie"}
+                </button>
                 <input
                   type="file"
                   onChange={handleSelfieUpload}
@@ -1133,6 +1163,16 @@ export default function AssetOwnerDashboard({ view = "assets", openNew = false }
         onClose={() => setShowAddWalletModal(false)}
         onSuccess={() => detectWallet()}
       />
+
+      {/* Liveness Detection Modal */}
+      {showLivenessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <LivenessDetection
+            onCapture={handleLivenessCapture}
+            onCancel={() => setShowLivenessModal(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
