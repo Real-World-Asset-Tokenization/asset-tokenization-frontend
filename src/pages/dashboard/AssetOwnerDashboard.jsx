@@ -1,224 +1,339 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import { kycAPI } from '../../lib/api';
-import LivenessDetection from '../../components/LivenessDetection';
+import { useState, useEffect, useRef } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { kycSteps } from "../../lib/ownerData";
+import { useAuth } from "../../context/AuthContext";
+import { useCurrency } from "../../context/CurrencyContext";
+import { useRole } from "../../context/RoleContext";
+import { kycAPI } from "../../lib/api";
+import { resolveUserWallet } from "../../lib/walletResolver";
+import { isAssetOwnedByUser } from "../../lib/assetOwnership";
+import Navbar from "../../components/Navbar";
+import AddWalletModal from "../../components/AddWalletModal";
+import LivenessDetection from "../../components/LivenessDetection";
+import IdMethodPicker, { idMethod } from "../../components/IdMethodPicker";
+import {
+  Building,
+  PlusCircle,
+  ShieldCheck,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+  Coins,
+  TrendingUp,
+  X,
+  ExternalLink,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Check,
+  FileCheck,
+  AlertTriangle,
+  UserCheck,
+  Wallet,
+  Sparkles,
+  ArrowRight,
+  RefreshCw
+} from "lucide-react";
+import { API_BASE_URL } from "../../lib/config";
 
-/* ------------------------------------------------------------------ */
-/*  Presentational icon components (decoration only – no logic)        */
-/* ------------------------------------------------------------------ */
-const ShieldCheckIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
-  </svg>
-);
-
-const CubeIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-  </svg>
-);
-
-const UploadIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-  </svg>
-);
-
-const CheckIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-  </svg>
-);
-
-const LogoutIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
-  </svg>
-);
-
-const RefreshIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-  </svg>
-);
-
-const AlertIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-  </svg>
-);
-
-const DocumentIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-  </svg>
-);
-
-const PhotoIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-  </svg>
-);
-
-const SparklesIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
-  </svg>
-);
-
-const UserIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-  </svg>
-);
-
-const MapPinIcon = ({ className = 'h-5 w-5' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-  </svg>
-);
-
-/* Shared decorative class strings */
-const inputClass =
-  'w-full rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 transition focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500/60 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-100 dark:placeholder-zinc-500';
-
-const fileClass =
-  'block w-full cursor-pointer text-sm text-zinc-500 file:mr-4 file:cursor-pointer file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 transition hover:file:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 dark:file:bg-blue-500/10 dark:file:text-blue-300 dark:hover:file:bg-blue-500/20 dark:text-zinc-400';
-
-const labelClass = 'mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300';
-
-export default function AssetOwnerDashboard() {
+// Inside the owner workspace this page serves several sidebar entries:
+//   view="assets" (My Assets), view="assets" + openNew (Submit Asset),
+//   view="kyc" (Complete KYC), view="kycStatus" (KYC Status).
+export default function AssetOwnerDashboard({ view = "assets", openNew = false }) {
+  const [searchParams] = useSearchParams();
+  const searchQuery = (searchParams.get("q") || "").trim().toLowerCase();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { currency, currencyInfo, convert, formatLKR, formatMUSD } = useCurrency();
+  const { isInvestor } = useRole();
+
+  useEffect(() => {
+    if (user?.role === "investor") {
+      navigate("/dashboard/investor", { replace: true });
+    }
+  }, [user, navigate]);
+
+  // Navigation & Tabs: Default to 'assets' so the user immediately sees asset management
+  const activeTab = view === "assets" ? "assets" : "kyc";
+
+  // KYC States
   const [kycStatus, setKycStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [showLivenessModal, setShowLivenessModal] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [error, setError] = useState('');
-  const [idNumber, setIdNumber] = useState('');
-  const [activeTab, setActiveTab] = useState('kyc');
-  const [assets, setAssets] = useState([]);
+  const [idNumber, setIdNumber] = useState("");
+  const [idType, setIdType] = useState("national_id");
+
+  // Asset Management States
+  const [loadedAssets, setAssets] = useState([]);
+  const ownerWallet = resolveUserWallet(user);
+  const assets = loadedAssets.filter(asset => isAssetOwnedByUser(asset, user));
   const [assetLoading, setAssetLoading] = useState(false);
+  const [showAddAssetModal, setShowAddAssetModalState] = useState(openNew);
+  useEffect(() => { setShowAddAssetModalState(openNew); }, [openNew]);
+  // Closing the form opened from "Submit Asset" returns to My Assets.
+  const setShowAddAssetModal = (open) => {
+    setShowAddAssetModalState(open);
+    if (!open && openNew) navigate("/owner/assets");
+  };
+  const [expandedAssetId, setExpandedAssetId] = useState(null);
+  const [verifyingAssetId, setVerifyingAssetId] = useState(null);
+  const [assetUploading, setAssetUploading] = useState(false);
+  const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+
+  // Wallet & Blockchain Tokenization States
+  const [account, setAccount] = useState("");
+  const [selectedOwnerWallet, setSelectedOwnerWallet] = useState("");
+  const [assetStatusFilter, setAssetStatusFilter] = useState("all"); // "all" | "verified" | "pending"
+  const [copiedHash, setCopiedHash] = useState("");
+  const [showAddWalletModal, setShowAddWalletModal] = useState(false);
+
+
+  // Asset Form State
   const [assetUploadData, setAssetUploadData] = useState({
-    assetName: '',
-    assetType: 'real_estate',
-    valuation: '',
-    currency: 'USD',
-    location: '',
-    latitude: null,
-    longitude: null,
-    address: '',
+    assetName: "",
+    symbol: "",
+    assetType: "real_estate",
+    valuation: "",
+    currency: "LKR",
+    totalShares: 1000,
+    location: "",
+    description: ""
   });
+
+  // The property value is typed in the selected currency. When the currency changes,
+  // convert what is already typed so the number keeps meaning the same amount.
+  const prevCurrency = useRef(currency);
+  useEffect(() => {
+    const prev = prevCurrency.current;
+    if (prev === currency) return;
+    prevCurrency.current = currency;
+    setAssetUploadData((d) => {
+      const n = Number(d.valuation);
+      if (!(n > 0)) return d;
+      const converted = convert(n, prev, currency);
+      return { ...d, valuation: String(Number(converted.toFixed(currencyInfo.decimals ?? 2))) };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency]);
+
   const [assetFiles, setAssetFiles] = useState({
     deed: null,
     surveyPlan: null,
     extracts: null,
     priorDeeds: null,
-    certificates: null,
+    certificates: null
   });
-  const [assetImages, setAssetImages] = useState([]);
-  const [fetchingLocation, setFetchingLocation] = useState(false);
-  const [assetUploading, setAssetUploading] = useState(false);
-  const [verifyingAssetId, setVerifyingAssetId] = useState(null);
-  const [expandedAssetId, setExpandedAssetId] = useState(null);
-  const [tokenizationStatus, setTokenizationStatus] = useState(null);
-  const [showConsentModal, setShowConsentModal] = useState(false);
-  const [consentingAssetId, setConsentingAssetId] = useState(null);
-  const [consenting, setConsenting] = useState(false);
-  const [showReuploadModal, setShowReuploadModal] = useState(false);
-  const [reuploadingAssetId, setReuploadingAssetId] = useState(null);
-  const [reuploading, setReuploading] = useState(false);
-  const [reuploadFiles, setReuploadFiles] = useState({
-    deed: null,
-    surveyPlan: null,
-    extracts: null,
-    priorDeeds: null,
-    certificates: null,
-  });
-  const [reuploadImages, setReuploadImages] = useState([]);
-  const [showKYCReuploadModal, setShowKYCReuploadModal] = useState(false);
-  const [reuploadingKYC, setReuploadingKYC] = useState(false);
-  const [kycReuploadFiles, setKycReuploadFiles] = useState({
-    document: null,
-    selfie: null,
-  });
-  const [kycReuploadIdNumber, setKycReuploadIdNumber] = useState('');
-  const [showLivenessModal, setShowLivenessModal] = useState(false);
 
-  useEffect(() => {
-    fetchKYCStatus();
-    fetchAssets();
-  }, []);
+  const handleCopyHash = (hash) => {
+    if (!hash) return;
+    navigator.clipboard.writeText(hash);
+    setCopiedHash(hash);
+    setTimeout(() => setCopiedHash(""), 2000);
+  };
 
-  // Update ID number when KYC status loads
-  useEffect(() => {
-    if (kycStatus?.idNumber) {
-      setIdNumber(kycStatus.idNumber);
+  const fetchAssets = async (walletAddress = selectedOwnerWallet) => {
+    if (!user?.token) {
+      setAssets([]);
+      setAssetLoading(false);
+      return;
     }
-  }, [kycStatus]);
 
-  const fetchAssets = async () => {
     setAssetLoading(true);
     try {
-      const response = await kycAPI.getUserAssets();
-      setAssets(response.data.data.assets);
-    } catch (err) {
-      console.error('Fetch assets error:', err);
-      // Don't show error if no assets exist
-      if (err.response?.status !== 404) {
-        setError('Failed to fetch assets: ' + (err.response?.data?.message || err.message));
+      // Fetch real registered assets from backend database API filtered by owner
+      const res = await fetch(`${API_BASE_URL}/assets/owned`, {
+        headers: { Authorization: `Bearer ${user.token}` },
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setAssets(data.data);
+        return;
       }
+      setAssets([]);
+    } catch (err) {
+      console.warn("Error fetching assets for owner:", err.message);
+      setAssets([]);
     } finally {
       setAssetLoading(false);
     }
   };
 
+  const detectWallet = async (explicitAddress = null) => {
+    const active = resolveUserWallet(user);
+
+    if (active) {
+      setAccount(active);
+      setSelectedOwnerWallet(resolveUserWallet(user) || "");
+      fetchAssets();
+    } else {
+      setAccount("");
+      setSelectedOwnerWallet("");
+      setAssets([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchKYCStatus();
+    detectWallet();
+
+    if (window.ethereum) {
+      const handleAccounts = (accounts) => {
+        if (accounts && accounts.length > 0) {
+          detectWallet(accounts[0]);
+        } else {
+          detectWallet();
+        }
+      };
+      window.ethereum.on("accountsChanged", handleAccounts);
+      return () => {
+        if (window.ethereum?.removeListener) {
+          window.ethereum.removeListener("accountsChanged", handleAccounts);
+        }
+      };
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (kycStatus?.idNumber) {
+      setIdNumber(kycStatus.idNumber);
+    }
+    if (kycStatus?.idType) setIdType(kycStatus.idType);
+  }, [kycStatus]);
+
   const fetchKYCStatus = async () => {
     try {
       const response = await kycAPI.getKYCStatus();
-      const kycData = response.data.data;
-      console.log('KYC Status data:', kycData);
-      console.log('Document image:', kycData?.documentImage);
-      console.log('Selfie:', kycData?.selfie);
-      setKycStatus(kycData);
+      setKycStatus(response.data?.data || null);
     } catch (err) {
-      console.error('KYC status error:', err);
-      if (err.response?.status === 404) {
-        setKycStatus(null); // No KYC record exists
-      } else {
-        setError('Failed to fetch KYC status: ' + (err.response?.data?.message || err.message));
+      if (err.response?.status !== 404) {
+        console.warn("KYC status error:", err.message);
       }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleAssetUpload = async (e) => {
+    e.preventDefault();
+
+    if (!assetUploadData.assetName.trim()) {
+      setError("Asset name is required");
+      return;
+    }
+    if (!assetUploadData.location.trim()) {
+      setError("Please enter the property location");
+      return;
+    }
+    if (!assetUploadData.valuation || Number(assetUploadData.valuation) <= 0) {
+      setError("Please enter a valid asset valuation");
+      return;
+    }
+
+    setAssetUploading(true);
+    setError("");
+    setSuccessMsg("");
+
+    const formData = new FormData();
+    formData.append("assetName", assetUploadData.assetName);
+    formData.append("assetType", assetUploadData.assetType);
+    // The backend stores values in LKR, so convert what was typed in the selected currency.
+    formData.append("valuation", String(Math.round(convert(Number(assetUploadData.valuation), currency, "LKR"))));
+    formData.append("currency", assetUploadData.currency);
+
+    // Optional fields
+    if (assetUploadData.symbol.trim()) formData.append("symbol", assetUploadData.symbol.trim());
+    formData.append("totalShares", assetUploadData.totalShares);
+    formData.append("location", assetUploadData.location);
+    formData.append("description", assetUploadData.description);
+    formData.append("issuerWallet", selectedOwnerWallet);
+
+    if (assetFiles.deed) formData.append("deed", assetFiles.deed);
+    if (assetFiles.surveyPlan) formData.append("surveyPlan", assetFiles.surveyPlan);
+    if (assetFiles.extracts) formData.append("extracts", assetFiles.extracts);
+    if (assetFiles.priorDeeds) formData.append("priorDeeds", assetFiles.priorDeeds);
+    if (assetFiles.certificates) formData.append("certificates", assetFiles.certificates);
+
+    try {
+      const response = await kycAPI.uploadAsset(formData);
+      setSuccessMsg("Asset successfully submitted for deed verification and legal review!");
+
+      // Reset form
+      setAssetUploadData({
+        assetName: "",
+        symbol: "",
+        assetType: "real_estate",
+        valuation: "",
+        currency: "LKR",
+        totalShares: 1000,
+        location: "",
+        description: ""
+      });
+      setAssetFiles({
+        deed: null,
+        surveyPlan: null,
+        extracts: null,
+        priorDeeds: null,
+        certificates: null
+      });
+
+      setShowAddAssetModal(false);
+      await fetchAssets(selectedOwnerWallet);
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || "Asset upload failed. Please try again.");
+    } finally {
+      setAssetUploading(false);
+    }
+  };
+
+
+
   const handleDocumentUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (!idNumber.trim()) {
-      setError('Please enter your ID number before uploading the document');
+      setError("Please enter your ID number before uploading the document");
       return;
     }
 
     setUploading(true);
-    setError('');
+    setError("");
 
     const formData = new FormData();
-    formData.append('document', file);
-    formData.append('idType', 'national_id');
-    formData.append('idNumber', idNumber);
+    formData.append("document", file);
+    formData.append("idType", idType);
+    formData.append("idNumber", idNumber);
 
     try {
-      const response = await kycAPI.uploadDocument(formData);
-      console.log('Document upload response:', response.data);
+      await kycAPI.uploadDocument(formData);
       await fetchKYCStatus();
+      setSuccessMsg("Identity document uploaded successfully!");
     } catch (err) {
-      console.error('Document upload error:', err);
-      setError(err.response?.data?.message || 'Document upload failed');
+      setError(err.response?.data?.message || "Document upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleLivenessCapture = async (file, livenessData) => {
+    setUploading(true);
+    setError("");
+
+    const formData = new FormData();
+    formData.append("selfie", file);
+    formData.append("livenessData", JSON.stringify(livenessData));
+
+    try {
+      await kycAPI.uploadSelfie(formData);
+      await fetchKYCStatus();
+      setSuccessMsg("Owner selfie biometric uploaded successfully!");
+      setShowLivenessModal(false);
+    } catch (err) {
+      setError(err.response?.data?.message || "Selfie upload failed");
     } finally {
       setUploading(false);
     }
@@ -229,39 +344,17 @@ export default function AssetOwnerDashboard() {
     if (!file) return;
 
     setUploading(true);
-    setError('');
+    setError("");
 
     const formData = new FormData();
-    formData.append('selfie', file);
+    formData.append("selfie", file);
 
     try {
-      const response = await kycAPI.uploadSelfie(formData);
-      console.log('Selfie upload response:', response.data);
+      await kycAPI.uploadSelfie(formData);
       await fetchKYCStatus();
+      setSuccessMsg("Owner selfie biometric uploaded successfully!");
     } catch (err) {
-      console.error('Selfie upload error:', err);
-      setError(err.response?.data?.message || 'Selfie upload failed');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleLivenessCapture = async (file, livenessData) => {
-    setUploading(true);
-    setError('');
-
-    const formData = new FormData();
-    formData.append('selfie', file);
-    formData.append('livenessData', JSON.stringify(livenessData));
-
-    try {
-      const response = await kycAPI.uploadSelfie(formData);
-      console.log('Selfie upload response:', response.data);
-      await fetchKYCStatus();
-      setShowLivenessModal(false);
-    } catch (err) {
-      console.error('Selfie upload error:', err);
-      setError(err.response?.data?.message || 'Selfie upload failed');
+      setError(err.response?.data?.message || "Selfie upload failed");
     } finally {
       setUploading(false);
     }
@@ -269,1462 +362,809 @@ export default function AssetOwnerDashboard() {
 
   const handleVerification = async () => {
     setVerifying(true);
-    setError('');
-
+    setError("");
     try {
       await kycAPI.runPipeline();
       await fetchKYCStatus();
+      setSuccessMsg("Owner KYC identity verification successfully completed!");
     } catch (err) {
-      setError(err.response?.data?.message || 'Verification failed');
+      setError(err.response?.data?.message || "KYC verification pipeline failed");
     } finally {
       setVerifying(false);
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
 
-  const handleFetchLocation = () => {
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by your browser');
-      return;
-    }
 
-    setFetchingLocation(true);
-    setError('');
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
 
-        // Use reverse geocoding to get address (using OpenStreetMap Nominatim API)
-        try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
-          );
-          const data = await response.json();
-
-          setAssetUploadData({
-            ...assetUploadData,
-            latitude: latitude.toString(),
-            longitude: longitude.toString(),
-            address: data.display_name || '',
-            location: data.display_name || `${latitude}, ${longitude}`,
-          });
-        } catch (err) {
-          // If geocoding fails, just use coordinates
-          setAssetUploadData({
-            ...assetUploadData,
-            latitude: latitude.toString(),
-            longitude: longitude.toString(),
-            location: `${latitude}, ${longitude}`,
-          });
-        } finally {
-          setFetchingLocation(false);
-        }
-      },
-      (error) => {
-        console.error('Geolocation error:', error);
-        setError('Unable to retrieve your location. Please enter it manually.');
-        setFetchingLocation(false);
-      }
-    );
-  };
-
-  const handleAssetUpload = async (e) => {
-    e.preventDefault();
-
-    // Validate required documents
-    if (!assetFiles.deed || !assetFiles.surveyPlan) {
-      setError('Deed and Survey Plan are required documents');
-      return;
-    }
-
-    setAssetUploading(true);
-    setError('');
-
-    const formData = new FormData();
-    formData.append('assetName', assetUploadData.assetName);
-    formData.append('assetType', assetUploadData.assetType);
-    formData.append('valuation', assetUploadData.valuation);
-    formData.append('currency', assetUploadData.currency);
-    formData.append('location', assetUploadData.location);
-    formData.append('latitude', assetUploadData.latitude || '');
-    formData.append('longitude', assetUploadData.longitude || '');
-    formData.append('address', assetUploadData.address || '');
-
-    // Add required documents
-    if (assetFiles.deed) formData.append('deed', assetFiles.deed);
-    if (assetFiles.surveyPlan) formData.append('surveyPlan', assetFiles.surveyPlan);
-
-    // Add optional documents
-    if (assetFiles.extracts) formData.append('extracts', assetFiles.extracts);
-    if (assetFiles.priorDeeds) formData.append('priorDeeds', assetFiles.priorDeeds);
-    if (assetFiles.certificates) formData.append('certificates', assetFiles.certificates);
-
-    // Add asset images (up to 5)
-    assetImages.forEach((image) => {
-      formData.append('images', image);
-    });
-
-    try {
-      const response = await kycAPI.uploadAsset(formData);
-      console.log('Asset upload response:', response.data);
-
-      // Reset form
-      setAssetUploadData({
-        assetName: '',
-        assetType: 'real_estate',
-        valuation: '',
-        currency: 'USD',
-        location: '',
-        latitude: null,
-        longitude: null,
-        address: '',
-      });
-      setAssetFiles({
-        deed: null,
-        surveyPlan: null,
-        extracts: null,
-        priorDeeds: null,
-        certificates: null,
-      });
-      setAssetImages([]);
-
-      // Refresh assets list
-      await fetchAssets();
-    } catch (err) {
-      console.error('Asset upload error:', err);
-      setError(err.response?.data?.message || 'Asset upload failed');
-    } finally {
-      setAssetUploading(false);
-    }
-  };
-
-  const getAssetTypeLabel = (type) => {
-    const labels = {
-      real_estate: 'Real Estate',
-      vehicle: 'Vehicle',
-      equipment: 'Equipment',
-      intellectual_property: 'Intellectual Property',
-      other: 'Other',
-    };
-    return labels[type] || type;
-  };
-
-  const getAssetStatusColor = (status) => {
-    switch (status) {
-      case 'approved':
-      case 'Tokenized':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'rejected':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      case 'under_review':
-      case 'awaiting_consent':
-      case 'spv_creation':
-      case 'ownership_transfer':
-      case 'ready_for_tokenization':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      case 'pending':
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
-    }
-  };
-
-  const getAssetStatusLabel = (status) => {
-    const labels = {
-      'pending': 'Pending',
-      'under_review': 'Under Review',
-      'approved': 'Approved',
-      'rejected': 'Rejected',
-      'awaiting_consent': 'Awaiting Consent',
-      'spv_creation': 'Creating SPV',
-      'ownership_transfer': 'Transferring Ownership',
-      'ready_for_tokenization': 'Ready for Tokenization',
-      'Tokenized': 'Tokenized',
-    };
-    return labels[status] || status.replace('_', ' ');
-  };
-
-  const getProgressStepLabel = (step) => {
-    const labels = {
-      'document_approval': 'Document Approved',
-      'owner_consent': 'Owner Consent',
-      'spv_creation': 'SPV Creation',
-      'ownership_transfer': 'Ownership Transfer',
-      'blockchain_tokenization': 'Blockchain Tokenization',
-      'complete': 'Complete',
-    };
-    return labels[step] || step.replace('_', ' ');
-  };
-
-  const handleAssetVerification = async (assetId) => {
-    setVerifyingAssetId(assetId);
-    setError('');
-
-    try {
-      const response = await kycAPI.verifyAsset(assetId);
-      console.log('Asset verification response:', response.data);
-
-      // Refresh assets to show updated status
-      await fetchAssets();
-
-      // Expand the verified asset to show results
-      setExpandedAssetId(assetId);
-    } catch (err) {
-      console.error('Asset verification error:', err);
-      setError(err.response?.data?.message || 'Asset verification failed');
-    } finally {
-      setVerifyingAssetId(null);
-    }
-  };
-
-  const handleReuploadClick = (assetId) => {
-    setReuploadingAssetId(assetId);
-    setReuploadFiles({
-      deed: null,
-      surveyPlan: null,
-      extracts: null,
-      priorDeeds: null,
-      certificates: null,
-    });
-    setReuploadImages([]);
-    setShowReuploadModal(true);
-  };
-
-  const handleConfirmReupload = async () => {
-    if (!reuploadingAssetId) return;
-
-    setReuploading(true);
-    setError('');
-
-    try {
-      const formData = new FormData();
-
-      // Add documents
-      if (reuploadFiles.deed) formData.append('deed', reuploadFiles.deed);
-      if (reuploadFiles.surveyPlan) formData.append('surveyPlan', reuploadFiles.surveyPlan);
-      if (reuploadFiles.extracts) formData.append('extracts', reuploadFiles.extracts);
-      if (reuploadFiles.priorDeeds) formData.append('priorDeeds', reuploadFiles.priorDeeds);
-      if (reuploadFiles.certificates) formData.append('certificates', reuploadFiles.certificates);
-
-      // Add images
-      reuploadImages.forEach((image) => {
-        formData.append('images', image);
-      });
-
-      const response = await kycAPI.reuploadAssetDocuments(reuploadingAssetId, formData);
-      setShowReuploadModal(false);
-      setReuploadingAssetId(null);
-
-      // Refresh assets
-      await fetchAssets();
-
-      alert('Documents re-uploaded successfully! Please run verification again.');
-    } catch (err) {
-      console.error('Re-upload error:', err);
-      setError(err.response?.data?.message || 'Failed to re-upload documents');
-    } finally {
-      setReuploading(false);
-    }
-  };
-
-  const handleCancelReupload = () => {
-    setShowReuploadModal(false);
-    setReuploadingAssetId(null);
-    setReuploadFiles({
-      deed: null,
-      surveyPlan: null,
-      extracts: null,
-      priorDeeds: null,
-      certificates: null,
-    });
-    setReuploadImages([]);
-  };
-
-  const handleKYCReuploadClick = () => {
-    setKycReuploadFiles({
-      document: null,
-      selfie: null,
-    });
-    setKycReuploadIdNumber(kycStatus?.idNumber || '');
-    setShowKYCReuploadModal(true);
-  };
-
-  const handleConfirmKYCReupload = async () => {
-    setReuploadingKYC(true);
-    setError('');
-
-    try {
-      const formData = new FormData();
-      formData.append('idType', 'national_id');
-      formData.append('idNumber', kycReuploadIdNumber);
-
-      if (kycReuploadFiles.document) formData.append('document', kycReuploadFiles.document);
-      if (kycReuploadFiles.selfie) formData.append('selfie', kycReuploadFiles.selfie);
-
-      const response = await kycAPI.reuploadKYCDocuments(formData);
-      setShowKYCReuploadModal(false);
-
-      // Refresh KYC status
-      await fetchKYCStatus();
-
-      alert('KYC documents re-uploaded successfully! Please run verification again.');
-    } catch (err) {
-      console.error('KYC re-upload error:', err);
-      setError(err.response?.data?.message || 'Failed to re-upload KYC documents');
-    } finally {
-      setReuploadingKYC(false);
-    }
-  };
-
-  const handleCancelKYCReupload = () => {
-    setShowKYCReuploadModal(false);
-    setKycReuploadFiles({
-      document: null,
-      selfie: null,
-    });
-    setKycReuploadIdNumber('');
-  };
-
-  const toggleAssetExpansion = (assetId) => {
-    setExpandedAssetId(expandedAssetId === assetId ? null : assetId);
-  };
-
-  const fetchTokenizationStatus = async (assetId) => {
-    try {
-      const response = await kycAPI.getTokenizationStatus(assetId);
-      setTokenizationStatus(response.data.data);
-    } catch (err) {
-      console.error('Fetch tokenization status error:', err);
-    }
-  };
-
-  const handleConsentClick = (assetId) => {
-    setConsentingAssetId(assetId);
-    setShowConsentModal(true);
-  };
-
-  const handleConfirmConsent = async () => {
-    if (!consentingAssetId) return;
-
-    setConsenting(true);
-    setError('');
-
-    try {
-      const response = await kycAPI.confirmTokenizationConsent(consentingAssetId);
-      setShowConsentModal(false);
-      setConsentingAssetId(null);
-
-      // Refresh assets and tokenization status
-      await fetchAssets();
-      await fetchTokenizationStatus(consentingAssetId);
-
-      // Show success message based on response
-      if (response.data.data.alreadyProvided) {
-        alert(response.data.message);
-      } else if (response.data.data.blockchainSkipped) {
-        alert('Consent recorded successfully! SPV created and ownership transferred. Blockchain tokenization will complete when the blockchain node is running.');
-      } else {
-        alert('Consent recorded successfully! SPV created, ownership transferred, and blockchain tokenization completed.');
-      }
-    } catch (err) {
-      console.error('Confirm consent error:', err);
-      setError(err.response?.data?.message || 'Failed to confirm consent');
-    } finally {
-      setConsenting(false);
-    }
-  };
-
-  const handleCancelConsent = () => {
-    setShowConsentModal(false);
-    setConsentingAssetId(null);
-  };
-
-  if (loading) {
+  // Classification helpers for Asset Owner's own assets
+  const isAssetVerified = (a) => {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-zinc-50 via-white to-blue-50 dark:from-black dark:via-zinc-950 dark:to-zinc-900">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-zinc-200 border-t-blue-600 dark:border-zinc-800 dark:border-t-blue-500" />
-          <p className="text-sm font-medium tracking-wide text-zinc-500 dark:text-zinc-400">
-            Loading your dashboard…
-          </p>
-        </div>
-      </div>
+      a.verificationStatus === "approved" ||
+      a.status === "Approved" ||
+      a.tokenized === true ||
+      a.status === "Tokenized" ||
+      Boolean(a.blockchainTokenId)
     );
-  }
+  };
+
+  const isAssetPending = (a) => {
+    return (
+      (a.status === "Pending" || a.verificationStatus === "pending" || !a.verificationStatus) &&
+      !isAssetVerified(a)
+    );
+  };
+
+  const verifiedAssets = assets.filter(isAssetVerified);
+  const pendingAssets = assets.filter(isAssetPending);
+
+  const displayedAssets = assets.filter((a) => {
+    if (searchQuery && ![a.name, a.assetName, a.symbol, a.location].some((v) => String(v || "").toLowerCase().includes(searchQuery))) return false;
+    if (assetStatusFilter === "verified") return isAssetVerified(a);
+    if (assetStatusFilter === "pending") return isAssetPending(a);
+    return true;
+  });
+
+  // Metrics calculation over owned assets only
+  const totalValuationLKR = assets.reduce(
+    (sum, a) => sum + (Number(a.valuationLKR || a.valuation) || 0),
+    0
+  );
+  const tokenizedCount = assets.filter(
+    (a) => a.tokenized || a.status === "Tokenized" || Boolean(a.blockchainTokenId)
+  ).length;
+  const approvedEligibleCount = verifiedAssets.filter(
+    (a) => !a.tokenized && a.status !== "Tokenized" && !a.blockchainTokenId
+  ).length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-50 via-white to-blue-50/60 dark:from-black dark:via-zinc-950 dark:to-zinc-900">
-      {/* ---------------------------------------------------------------- */}
-      {/* Navbar                                                            */}
-      {/* ---------------------------------------------------------------- */}
-      <nav className="sticky top-0 z-40 border-b border-zinc-200/70 bg-white/80 backdrop-blur-xl dark:border-zinc-800/70 dark:bg-zinc-900/80">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+      <Navbar />
+
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
+        {/* Page header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-white">
+              {{ assets: "My Assets", kyc: "Complete KYC", kycStatus: "KYC Status" }[view]}
+            </h1>
+            <p className="text-sm text-zinc-400 mt-1">
+              {{
+                assets: "Every property you have submitted, its verification status and next step.",
+                kyc: "Upload your identity document and a selfie, then run the automated check.",
+                kycStatus: "Results of your identity verification.",
+              }[view]}
+            </p>
+          </div>
+          {view === "assets" && !isInvestor && (
+            <button
+              onClick={() => { setError(""); setSuccessMsg(""); setShowAddAssetModal(true); }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm rounded-xl"
+            >
+              <PlusCircle className="w-5 h-5" /> Submit asset
+            </button>
+          )}
+        </div>
+
+        {/* Connected Owner Wallet Banner */}
+        <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/25">
-              <ShieldCheckIcon className="h-6 w-6" />
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              selectedOwnerWallet ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-amber-500/10 border border-amber-500/30"
+            }`}>
+              {selectedOwnerWallet ? (
+                <UserCheck className="w-5 h-5 text-emerald-400" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-amber-400" />
+              )}
             </div>
             <div>
-              <h1 className="text-lg font-bold leading-tight tracking-tight text-zinc-900 dark:text-zinc-50">
-                Asset Owner Dashboard
-              </h1>
-              <p className="hidden text-xs text-zinc-500 dark:text-zinc-400 sm:block">
-                KYC verification &amp; asset tokenization
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-xs font-semibold uppercase tracking-wider ${
+                  selectedOwnerWallet ? "text-emerald-400" : "text-amber-400"
+                }`}>
+                  {selectedOwnerWallet ? "Connected Asset Owner Wallet" : "No Wallet Connected"}
+                </span>
+                {selectedOwnerWallet ? (
+                  <>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-mono bg-zinc-800 text-zinc-300 border border-zinc-700">
+                      {selectedOwnerWallet.slice(0, 6)}...{selectedOwnerWallet.slice(-4)}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                      {assets.length} Properties Registered
+                    </span>
+                  </>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                    MetaMask Disconnected
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                {selectedOwnerWallet
+                  ? "Displays only real-world assets registered to your authenticated wallet address."
+                  : "Connect your MetaMask wallet to view and manage your registered properties."}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-3 rounded-full border border-zinc-200 bg-white/70 py-1.5 pl-1.5 pr-4 dark:border-zinc-700 dark:bg-zinc-800/60 sm:flex">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-sm font-bold text-white shadow-sm">
-                {user?.name?.charAt(0)?.toUpperCase() || <UserIcon className="h-4 w-4" />}
-              </div>
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                Welcome, {user?.name}
-              </span>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-red-500/20 transition-all hover:shadow-lg hover:shadow-red-500/30 hover:brightness-110 active:scale-[0.98]"
-            >
-              <LogoutIcon className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {selectedOwnerWallet ? (
+              <button
+                onClick={() => fetchAssets(selectedOwnerWallet)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Refresh Assets</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowAddWalletModal(true)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>Add Wallet to Account</span>
+              </button>
+            )}
           </div>
         </div>
-      </nav>
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        {/* Error banner */}
+        {/* Alerts */}
         {error && (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3.5 text-sm text-red-700 shadow-sm backdrop-blur dark:border-red-800/60 dark:bg-red-900/20 dark:text-red-300">
-            <AlertIcon className="mt-0.5 h-5 w-5 flex-shrink-0" />
-            <span className="font-medium">{error}</span>
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span>{error}</span>
+            </div>
+            <button onClick={() => setError("")} className="text-zinc-500 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
-        {/* ---------------------------------------------------------------- */}
-        {/* Tab navigation                                                    */}
-        {/* ---------------------------------------------------------------- */}
-        <div className="mb-6 flex justify-center sm:justify-start">
-          <div className="inline-flex rounded-2xl border border-zinc-200/80 bg-white/80 p-1.5 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/70">
-            <button
-              onClick={() => setActiveTab('kyc')}
-              className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all ${
-                activeTab === 'kyc'
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md shadow-blue-500/25'
-                  : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
-              }`}
-            >
-              <ShieldCheckIcon className="h-4 w-4" />
-              KYC Verification
-            </button>
-            <button
-              onClick={() => setActiveTab('assets')}
-              className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all ${
-                activeTab === 'assets'
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md shadow-blue-500/25'
-                  : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
-              }`}
-            >
-              <CubeIcon className="h-4 w-4" />
-              Asset Management
+        {successMsg && (
+          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" />
+              <span>{successMsg}</span>
+            </div>
+            <button onClick={() => setSuccessMsg("")} className="text-zinc-500 hover:text-white">
+              <X className="w-4 h-4" />
             </button>
           </div>
-        </div>
+        )}
 
-        {/* ---------------------------------------------------------------- */}
-        {/* KYC Tab                                                           */}
-        {/* ---------------------------------------------------------------- */}
-        {activeTab === 'kyc' && (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            {/* KYC Status Card */}
-            <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-lg shadow-zinc-200/40 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/40">
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
-              <div className="mb-5 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
-                  <ShieldCheckIcon className="h-5 w-5" />
-                </div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                  KYC Status
-                </h2>
+        {/* Portfolio Stats Grid */}
+        {view === "assets" && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-lg">
+            <div className="flex items-center justify-between text-zinc-400 mb-2 text-xs font-semibold uppercase tracking-wider">
+              <span>Total Owned Assets</span>
+              <Building className="w-4 h-4 text-blue-400" />
+            </div>
+            <div className="text-2xl font-black text-white">
+              {assets.length} <span className="text-sm font-normal text-zinc-400">Properties</span>
+            </div>
+            <div className="text-xs text-blue-400 mt-2 font-medium">
+              Exclusively owned by this address
+            </div>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-lg">
+            <div className="flex items-center justify-between text-zinc-400 mb-2 text-xs font-semibold uppercase tracking-wider">
+              <span>Verified & Tokenized</span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div className="text-2xl font-black text-emerald-400">
+              {verifiedAssets.length} <span className="text-sm font-normal text-zinc-400">Properties</span>
+            </div>
+            <div className="text-xs text-zinc-400 mt-2">
+              {tokenizedCount} On-Chain • {approvedEligibleCount} Ready to Tokenize
+            </div>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-lg">
+            <div className="flex items-center justify-between text-zinc-400 mb-2 text-xs font-semibold uppercase tracking-wider">
+              <span>Pending Verification</span>
+              <Clock className="w-4 h-4 text-amber-400" />
+            </div>
+            <div className="text-2xl font-black text-amber-400">
+              {pendingAssets.length} <span className="text-sm font-normal text-zinc-400">Properties</span>
+            </div>
+            <div className="text-xs text-zinc-400 mt-2">
+              Title deeds & cadastral plans under review
+            </div>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-lg">
+            <div className="flex items-center justify-between text-zinc-400 mb-2 text-xs font-semibold uppercase tracking-wider">
+              <span>Combined Valuation ({currency})</span>
+              <TrendingUp className="w-4 h-4 text-indigo-400" />
+            </div>
+            <div className="text-2xl font-black text-white">
+              {formatLKR(totalValuationLKR, { compact: true })}
+            </div>
+            <div className="text-xs text-zinc-500 mt-2">
+              {currency !== "LKR" ? `≈ LKR ${(totalValuationLKR / 1000000).toFixed(1)}M appraisal` : "Total real estate appraisal"}
+            </div>
+          </div>
+        </div>}
+
+        {/* TAB 1: ASSET MANAGEMENT */}
+        {activeTab === "assets" && (
+          <div className="space-y-6">
+            {/* Quick Onboard Banner */}
+            <div className="bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-zinc-900 border border-blue-800/40 rounded-2xl p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-blue-400" />
+                  Ready to Register or Tokenize a Real-World Property?
+                </h3>
+                <p className="text-xs text-zinc-400 max-w-2xl">
+                  Upload deed certificates, cadastral survey plans, and appraisal figures. Legally verified properties can be fractionalized on the Ethereum blockchain into ERC-1155 tokens.
+                </p>
               </div>
 
-              {kycStatus ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between rounded-xl bg-zinc-50 px-4 py-3 dark:bg-zinc-800/50">
-                    <span className="text-sm text-zinc-600 dark:text-zinc-400">Status</span>
-                    <span className={`rounded-full px-3 py-1 text-xs font-bold tracking-wide ${
-                      kycStatus.verificationStatus === 'approved'
-                        ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300'
-                        : kycStatus.verificationStatus === 'rejected'
-                          ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300'
-                          : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300'
-                    }`}>
-                      {kycStatus.verificationStatus.toUpperCase()}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-zinc-200/70 bg-gradient-to-br from-white to-zinc-50 p-3 dark:border-zinc-700/60 dark:from-zinc-800/40 dark:to-zinc-900/40">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                        Face Score
-                      </p>
-                      <p className="mt-1 text-lg font-bold text-zinc-900 dark:text-zinc-50">
-                        {kycStatus.faceScore || 'N/A'}%
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-zinc-200/70 bg-gradient-to-br from-white to-zinc-50 p-3 dark:border-zinc-700/60 dark:from-zinc-800/40 dark:to-zinc-900/40">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                        Risk Score
-                      </p>
-                      <p className="mt-1 text-lg font-bold text-zinc-900 dark:text-zinc-50">
-                        {kycStatus.riskScore || 'N/A'}/100
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-xl border border-zinc-200/70 px-4 py-3 dark:border-zinc-700/60">
-                    <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                      Document Authentic
-                    </span>
-                    <span className={`inline-flex items-center gap-1.5 text-sm font-semibold ${
-                      kycStatus.documentAuthentic ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                    }`}>
-                      <span className={`h-2 w-2 rounded-full ${kycStatus.documentAuthentic ? 'bg-green-500' : 'bg-red-500'}`} />
-                      {kycStatus.documentAuthentic ? 'Yes' : 'No'}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/60 px-4 py-8 text-center dark:border-zinc-700 dark:bg-zinc-800/30">
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    No KYC record found. Please upload your documents.
-                  </p>
-                </div>
+              {!isInvestor && (
+                <button
+                  onClick={() => setShowAddAssetModal(true)}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-blue-500/20 shrink-0 transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  Add Asset Now
+                </button>
               )}
             </div>
 
-            {/* Document Upload Card */}
-            <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-lg shadow-zinc-200/40 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/40">
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-500" />
-              <div className="mb-5 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
-                  <UploadIcon className="h-5 w-5" />
-                </div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                  Upload Documents
-                </h2>
+            {/* Sub-Filter Tabs: All vs Verified vs Pending */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/60 p-2 rounded-2xl border border-zinc-800">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setAssetStatusFilter("all")}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    assetStatusFilter === "all"
+                      ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
+                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                  }`}
+                >
+                  <Building className="w-3.5 h-3.5" />
+                  <span>All My Assets ({assets.length})</span>
+                </button>
+                <button
+                  onClick={() => setAssetStatusFilter("verified")}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    assetStatusFilter === "verified"
+                      ? "bg-emerald-600 text-white shadow-lg shadow-emerald-500/25 border border-emerald-500"
+                      : "text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800"
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Verified Assets ({verifiedAssets.length})</span>
+                </button>
+                <button
+                  onClick={() => setAssetStatusFilter("pending")}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    assetStatusFilter === "pending"
+                      ? "bg-amber-600 text-white shadow-lg shadow-amber-500/25 border border-amber-500"
+                      : "text-zinc-400 hover:text-amber-400 hover:bg-zinc-800"
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Pending Assets ({pendingAssets.length})</span>
+                </button>
               </div>
 
-              <div className="space-y-5">
-                <div>
-                  <label className={labelClass}>ID Number</label>
-                  <input
-                    type="text"
-                    value={idNumber}
-                    onChange={(e) => setIdNumber(e.target.value)}
-                    placeholder="Enter your ID number"
-                    className={inputClass}
-                    disabled={kycStatus?.documentImage}
-                  />
-                </div>
-
-                <div>
-                  <label className={`${labelClass} flex items-center gap-2`}>
-                    <DocumentIcon className="h-4 w-4 text-blue-500" />
-                    ID Document
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleDocumentUpload}
-                    disabled={uploading || kycStatus?.documentImage}
-                    className={fileClass}
-                  />
-                  {kycStatus?.documentImage && (
-                    <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-green-600 dark:text-green-400">
-                      <CheckIcon className="h-4 w-4" /> Document uploaded
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className={`${labelClass} flex items-center gap-2`}>
-                    <PhotoIcon className="h-4 w-4 text-blue-500" />
-                    Selfie
-                  </label>
-                  {!kycStatus?.selfie ? (
-                    <button
-                      onClick={() => setShowLivenessModal(true)}
-                      disabled={uploading}
-                      className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {uploading ? 'Processing...' : 'Capture Live Selfie'}
-                    </button>
-                  ) : (
-                    <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-green-600 dark:text-green-400">
-                      <CheckIcon className="h-4 w-4" /> Selfie uploaded
-                    </p>
-                  )}
-                </div>
+              <div className="text-xs text-zinc-400 px-2 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+                <span>Showing assets owned by <span className="font-mono text-zinc-200">{selectedOwnerWallet ? `${selectedOwnerWallet.slice(0, 6)}...${selectedOwnerWallet.slice(-4)}` : "None (Connect Wallet)"}</span></span>
               </div>
             </div>
 
-            {/* Verification Card */}
-            <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-lg shadow-zinc-200/40 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/40 md:col-span-2">
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
-                  <SparklesIcon className="h-5 w-5" />
-                </div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                  KYC Verification
-                </h2>
+            {searchQuery && (
+              <p className="text-sm text-zinc-400">Showing assets matching “{searchParams.get("q")}”. <Link to="/owner/assets" className="text-blue-300">Clear search</Link></p>
+            )}
+            {/* Assets Grid */}
+            {assetLoading ? (
+              <div className="py-20 text-center text-zinc-500">
+                <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                Loading owned assets...
               </div>
-
-              <p className="mb-5 max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Run the complete KYC verification pipeline including OCR, face verification, and risk analysis.
-              </p>
-
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={handleVerification}
-                  disabled={verifying || !kycStatus?.documentImage || !kycStatus?.selfie}
-                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-500/25 transition-all hover:shadow-lg hover:shadow-blue-500/35 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-                >
-                  {verifying ? (
-                    <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                      Running Verification…
-                    </>
-                  ) : (
-                    <>
-                      <SparklesIcon className="h-4 w-4" />
-                      Start KYC Verification
-                    </>
-                  )}
-                </button>
-
-                {(kycStatus?.verificationStatus === 'rejected' || kycStatus?.verificationStatus === 'under_review') && (
+            ) : displayedAssets.length === 0 ? (
+              <div className="text-center py-16 bg-zinc-900 border border-zinc-800 rounded-2xl">
+                <Building className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
+                <h3 className="text-lg font-bold text-white">
+                  {assetStatusFilter === "verified"
+                    ? "No Verified Assets Found"
+                    : assetStatusFilter === "pending"
+                    ? "No Pending Assets Found"
+                    : "No Assets Owned by this Wallet"}
+                </h3>
+                <p className="text-xs text-zinc-400 max-w-md mx-auto mt-1 mb-5">
+                  {assetStatusFilter === "verified"
+                    ? "Submit your pending property deeds for verification or onboard a new asset."
+                    : assetStatusFilter === "pending"
+                    ? "All registered properties have completed legal verification."
+                    : "Begin by registering your first real-world property deed for fractional tokenization."}
+                </p>
+                {!isInvestor && (
                   <button
-                    onClick={handleKYCReuploadClick}
-                    className="inline-flex items-center gap-2 rounded-xl bg-orange-600 hover:bg-orange-700 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-orange-500/25 transition-all hover:shadow-lg hover:shadow-orange-500/35 hover:brightness-110 active:scale-[0.98]"
+                    onClick={() => setShowAddAssetModal(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-medium cursor-pointer"
                   >
-                    <UploadIcon className="h-4 w-4" />
-                    Re-upload Documents
+                    Register New Asset
                   </button>
                 )}
-
-                <button
-                  onClick={fetchKYCStatus}
-                  disabled={loading}
-                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 bg-white px-6 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                >
-                  <RefreshIcon className="h-4 w-4" />
-                  Refresh Status
-                </button>
               </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {displayedAssets.map((asset) => {
+                  const isTokenized = asset.tokenized || asset.status === "Tokenized" || Boolean(asset.blockchainTokenId);
+                  const isApproved = isAssetVerified(asset);
+                  const isPending = isAssetPending(asset);
+                  const isExpanded = expandedAssetId === asset.assetId;
+                  const totalShares = Number(asset.totalShares) || 0;
+                  const valuation = Number(asset.valuationLKR ?? asset.valuation) || 0;
+                  const referencePrice = totalShares > 0 ? valuation / totalShares : 0;
 
-              {(!kycStatus?.documentImage || !kycStatus?.selfie) && (
-                <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
-                  Please upload both document and selfie before verification.
-                </p>
-              )}
-              {kycStatus?.documentImage && kycStatus?.selfie && (
-                <p className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-green-600 dark:text-green-400">
-                  <CheckIcon className="h-4 w-4" /> Both documents uploaded — ready for verification
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ---------------------------------------------------------------- */}
-        {/* Assets Tab                                                        */}
-        {/* ---------------------------------------------------------------- */}
-        {activeTab === 'assets' && (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {/* Asset Upload Form */}
-            <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-lg shadow-zinc-200/40 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/40">
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-500 via-sky-500 to-cyan-500" />
-              <div className="mb-5 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
-                  <UploadIcon className="h-5 w-5" />
-                </div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                  Upload New Asset
-                </h2>
-              </div>
-
-              <form onSubmit={handleAssetUpload} className="space-y-4">
-                <div>
-                  <label className={labelClass}>Asset Name</label>
-                  <input
-                    type="text"
-                    value={assetUploadData.assetName}
-                    onChange={(e) => setAssetUploadData({ ...assetUploadData, assetName: e.target.value })}
-                    placeholder="Enter asset name"
-                    className={inputClass}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Asset Type</label>
-                  <select
-                    value={assetUploadData.assetType}
-                    onChange={(e) => setAssetUploadData({ ...assetUploadData, assetType: e.target.value })}
-                    className={inputClass}
-                    required
-                  >
-                    <option value="real_estate">Real Estate</option>
-                    <option value="vehicle">Vehicle</option>
-                    <option value="equipment">Equipment</option>
-                    <option value="intellectual_property">Intellectual Property</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <div className="sm:col-span-2">
-                    <label className={labelClass}>Valuation</label>
-                    <input
-                      type="number"
-                      value={assetUploadData.valuation}
-                      onChange={(e) => setAssetUploadData({ ...assetUploadData, valuation: e.target.value })}
-                      placeholder="Enter asset value"
-                      className={inputClass}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Currency</label>
-                    <select
-                      value={assetUploadData.currency}
-                      onChange={(e) => setAssetUploadData({ ...assetUploadData, currency: e.target.value })}
-                      className={inputClass}
-                      required
-                    >
-                      <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
-                      <option value="GBP">GBP</option>
-                      <option value="NGN">NGN</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className={labelClass}>Location</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={assetUploadData.location}
-                      onChange={(e) => setAssetUploadData({ ...assetUploadData, location: e.target.value })}
-                      placeholder="Enter asset location"
-                      className={inputClass}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={handleFetchLocation}
-                      disabled={fetchingLocation}
-                      className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                      title="Get current location"
-                    >
-                      {fetchingLocation ? (
-                        <>
-                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                          Locating...
-                        </>
-                      ) : (
-                        <>
-                          <MapPinIcon className="h-4 w-4" />
-                          Get Location
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  {assetUploadData.latitude && assetUploadData.longitude && (
-                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      Coordinates: {assetUploadData.latitude}, {assetUploadData.longitude}
-                    </p>
-                  )}
-                </div>
-
-                <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/60 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
-                  <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Asset Images (up to 5)
-                  </p>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files);
-                      if (files.length > 5) {
-                        setError('Maximum 5 images allowed');
-                        return;
-                      }
-                      setAssetImages(files);
-                    }}
-                    className={fileClass}
-                  />
-                  {assetImages.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {assetImages.map((file, index) => (
-                        <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden border border-zinc-300">
-                          <img
-                            src={URL.createObjectURL(file)}
-                            alt={`Preview ${index + 1}`}
-                            className="w-full h-full object-cover"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newImages = assetImages.filter((_, i) => i !== index);
-                              setAssetImages(newImages);
-                            }}
-                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                    {assetImages.length}/5 images selected
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/60 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
-                  <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Supporting Documents
-                  </p>
-
-                  <div className="space-y-4">
-                    <div>
-                      <label className={labelClass}>
-                        Deed Document <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => setAssetFiles({ ...assetFiles, deed: e.target.files?.[0] })}
-                        className={fileClass}
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className={labelClass}>
-                        Survey Plan <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => setAssetFiles({ ...assetFiles, surveyPlan: e.target.files?.[0] })}
-                        className={fileClass}
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className={`${labelClass} flex items-center gap-2`}>
-                        Extracts
-                        <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                          Optional
-                        </span>
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => setAssetFiles({ ...assetFiles, extracts: e.target.files?.[0] })}
-                        className={fileClass}
-                      />
-                    </div>
-
-                    <div>
-                      <label className={`${labelClass} flex items-center gap-2`}>
-                        Prior Deeds
-                        <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                          Optional
-                        </span>
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => setAssetFiles({ ...assetFiles, priorDeeds: e.target.files?.[0] })}
-                        className={fileClass}
-                      />
-                    </div>
-
-                    <div>
-                      <label className={`${labelClass} flex items-center gap-2`}>
-                        Certificates
-                        <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                          Optional
-                        </span>
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => setAssetFiles({ ...assetFiles, certificates: e.target.files?.[0] })}
-                        className={fileClass}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={assetUploading}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-500/25 transition-all hover:shadow-lg hover:shadow-blue-500/35 hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-                >
-                  {assetUploading ? (
-                    <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                      Uploading…
-                    </>
-                  ) : (
-                    <>
-                      <UploadIcon className="h-4 w-4" />
-                      Upload Asset
-                    </>
-                  )}
-                </button>
-              </form>
-            </div>
-
-            {/* Assets List */}
-            <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-lg shadow-zinc-200/40 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/40">
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500" />
-              <div className="mb-5 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
-                  <CubeIcon className="h-5 w-5" />
-                </div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-                  My Assets
-                </h2>
-              </div>
-
-              {assetLoading ? (
-                <div className="flex flex-col items-center gap-3 py-12">
-                  <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-zinc-200 border-t-blue-600 dark:border-zinc-700 dark:border-t-blue-500" />
-                  <div className="text-sm text-zinc-500 dark:text-zinc-400">Loading assets…</div>
-                </div>
-              ) : assets.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/60 px-4 py-12 text-center dark:border-zinc-700 dark:bg-zinc-800/30">
-                  <CubeIcon className="mx-auto mb-3 h-8 w-8 text-zinc-300 dark:text-zinc-600" />
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    No assets uploaded yet
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {assets.map((asset) => (
+                  return (
                     <div
                       key={asset.assetId}
-                      className="rounded-xl border border-zinc-200 bg-gradient-to-br from-white to-zinc-50/60 p-4 transition-all hover:border-blue-300 hover:shadow-md dark:border-zinc-700 dark:from-zinc-800/40 dark:to-zinc-900/40 dark:hover:border-blue-700"
+                      className={`bg-zinc-900 border rounded-2xl p-6 shadow-xl flex flex-col justify-between transition-all hover:border-zinc-700 ${
+                        isPending
+                          ? "border-amber-800/40 bg-gradient-to-b from-zinc-900 via-zinc-900 to-amber-950/15"
+                          : isTokenized
+                          ? "border-emerald-800/40 bg-gradient-to-b from-zinc-900 via-zinc-900 to-emerald-950/15"
+                          : "border-blue-800/40 bg-gradient-to-b from-zinc-900 via-zinc-900 to-blue-950/15"
+                      }`}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="truncate font-semibold text-zinc-900 dark:text-zinc-50">
-                            {asset.assetName}
-                          </h3>
-                          <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                            {getAssetTypeLabel(asset.assetType)}
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                            {asset.currency} {Number(asset.valuation).toLocaleString()}
-                          </p>
+                      <div>
+                        {/* Status Badges */}
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="px-2.5 py-1 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-400">
+                            {asset.symbol || `Asset #${asset.assetId}`}
+                          </span>
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
+                              isTokenized
+                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+                                : isApproved
+                                ? "bg-blue-500/10 text-blue-400 border border-blue-500/30"
+                                : "bg-amber-500/10 text-amber-400 border border-amber-500/30"
+                            }`}
+                          >
+                            {isTokenized ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>TOKENIZED{asset.blockchainAssetId != null ? ` (TOKEN #${asset.blockchainAssetId})` : ""}</span>
+                              </>
+                            ) : isApproved ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
+                                <span>APPROVED • READY TO TOKENIZE</span>
+                              </>
+                            ) : (
+                              <>
+                                <Clock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                                <span>PENDING VERIFICATION</span>
+                              </>
+                            )}
+                          </span>
                         </div>
-                        <span className={`flex-shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide ${getAssetStatusColor(asset.status || asset.verificationStatus)}`}>
-                          {getAssetStatusLabel(asset.status || asset.verificationStatus)}
-                        </span>
-                      </div>
 
-                      <div className="mt-4 flex flex-wrap items-center gap-2">
-                        <button
-                          onClick={() => toggleAssetExpansion(asset.assetId)}
-                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-blue-500/10"
-                        >
-                          {expandedAssetId === asset.assetId ? 'Hide Details' : 'View Details'}
-                        </button>
+                        {/* Title & Valuation */}
+                        <h3 className="text-lg font-bold text-white mb-1">{asset.name || asset.assetName}</h3>
+                        <p className="text-xs text-zinc-400 mb-3 capitalize">
+                          {[(asset.propertyType || asset.assetType || "").replace("_", " "), asset.location].filter(Boolean).join(" • ") || "Location not provided"}
+                        </p>
 
-                        {!asset.verificationStatus || asset.verificationStatus === 'pending' ? (
-                          <button
-                            onClick={() => handleAssetVerification(asset.assetId)}
-                            disabled={verifyingAssetId === asset.assetId}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50"
-                          >
-                            {verifyingAssetId === asset.assetId ? 'Verifying…' : 'Verify'}
-                          </button>
-                        ) : null}
-
-                        {asset.verificationStatus === 'approved' && !asset.tokenizationConsent && asset.status !== 'ready_for_tokenization' && asset.status !== 'Tokenized' && (
-                          <button
-                            onClick={() => handleConsentClick(asset.assetId)}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98]"
-                          >
-                            <SparklesIcon className="h-3.5 w-3.5" />
-                            Proceed with Tokenization
-                          </button>
+                        {/* Distinct Pending Verification Notice */}
+                        {isPending && (
+                          <div className="bg-amber-950/30 border border-amber-800/40 rounded-xl p-3.5 space-y-2 text-xs mb-4">
+                            <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span>Deed Document Verification In Progress</span>
+                            </div>
+                            <p className="text-[11px] text-zinc-300 leading-relaxed">
+                              Deed documents & cadastral plans submitted. Awaiting upstream legal title clearance before smart-contract fractional tokenization is unlocked.
+                            </p>
+                            <div className="flex items-center justify-between pt-1 border-t border-amber-800/30 font-mono text-[11px]">
+                              <span className="text-zinc-400">Deed SHA-256:</span>
+                              <button
+                                onClick={() => handleCopyHash(asset.documentHash)}
+                                className="text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer font-mono"
+                                title="Copy Document Hash"
+                              >
+                                <span>{asset.documentHash ? `${asset.documentHash.slice(0, 10)}...${asset.documentHash.slice(-6)}` : "Not recorded"}</span>
+                                {copiedHash === asset.documentHash ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                              </button>
+                            </div>
+                          </div>
                         )}
 
-                        {(asset.verificationStatus === 'rejected' || asset.verificationStatus === 'under_review') && (
-                          <button
-                            onClick={() => handleReuploadClick(asset.assetId)}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-all active:scale-[0.98]"
-                          >
-                            <UploadIcon className="h-3.5 w-3.5" />
-                            Re-upload Documents
-                          </button>
-                        )}
-                      </div>
-
-                      {expandedAssetId === asset.assetId && (
-                        <div className="mt-4 border-t border-zinc-200 pt-4 text-sm dark:border-zinc-700">
-                          <div className="space-y-2.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-zinc-500 dark:text-zinc-400">Risk Score</span>
-                              <span className="font-semibold text-zinc-900 dark:text-zinc-100">
-                                {asset.riskScore !== undefined ? `${asset.riskScore}/100` : 'N/A'}
+                        {/* Core Appraisal & Dual-Price Formula Metrics */}
+                        <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-xl p-3.5 space-y-2 text-xs mb-4">
+                          <div className="flex justify-between text-zinc-400">
+                            <span>Appraisal Valuation:</span>
+                            <div className="text-right">
+                              <span className="font-bold text-white">
+                                {formatLKR(valuation)}
                               </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-zinc-500 dark:text-zinc-400">Document Authentic</span>
-                              <span className={`inline-flex items-center gap-1.5 font-semibold ${
-                                asset.documentAuthentic ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                              }`}>
-                                <span className={`h-2 w-2 rounded-full ${asset.documentAuthentic ? 'bg-green-500' : 'bg-red-500'}`} />
-                                {asset.documentAuthentic ? 'Yes' : 'No'}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-zinc-500 dark:text-zinc-400">Ownership Verified</span>
-                              <span className={`inline-flex items-center gap-1.5 font-semibold ${
-                                asset.ownershipVerified ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                              }`}>
-                                <span className={`h-2 w-2 rounded-full ${asset.ownershipVerified ? 'bg-green-500' : 'bg-red-500'}`} />
-                                {asset.ownershipVerified ? 'Yes' : 'No'}
-                              </span>
-                            </div>
-                            {asset.rejectionReason && (
-                              <div className="flex items-start justify-between gap-4">
-                                <span className="text-zinc-500 dark:text-zinc-400">Rejection Reason</span>
-                                <span className="text-right font-medium text-red-600 dark:text-red-400">
-                                  {asset.rejectionReason}
+                              {currency !== "LKR" && (
+                                <span className="block text-[10px] text-zinc-500 font-mono">
+                                  LKR {valuation.toLocaleString()}
                                 </span>
-                              </div>
-                            )}
-
-                            {asset.verificationStatus === 'approved' && (
-                              <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-                                <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                  <SparklesIcon className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
-                                  Tokenization Progress
-                                </p>
-
-                                <div className="relative pl-6">
-                                  <div className="absolute bottom-2 left-[7px] top-2 w-px bg-zinc-200 dark:bg-zinc-700" />
-                                  <div className="space-y-3">
-                                    {/* Document Approved */}
-                                    <div className="relative">
-                                      <span className="absolute -left-6 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 ring-4 ring-green-500/15">
-                                        <CheckIcon className="h-2.5 w-2.5 text-white" />
-                                      </span>
-                                      <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                                        Document Approved
-                                      </span>
-                                    </div>
-
-                                    {/* Owner Consent */}
-                                    <div className="relative">
-                                      {asset.tokenizationConsent || asset.status === 'ready_for_tokenization' || asset.status === 'Tokenized' ? (
-                                        <span className="absolute -left-6 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 ring-4 ring-green-500/15">
-                                          <CheckIcon className="h-2.5 w-2.5 text-white" />
-                                        </span>
-                                      ) : (
-                                        <span className="absolute -left-6 top-0.5 h-4 w-4 rounded-full border-2 border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900" />
-                                      )}
-                                      <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                                        Owner Consent
-                                      </span>
-                                    </div>
-
-                                    {/* SPV Creation */}
-                                    <div className="relative">
-                                      {asset.spvCreated || asset.status === 'ready_for_tokenization' || asset.status === 'Tokenized' ? (
-                                        <span className="absolute -left-6 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 ring-4 ring-green-500/15">
-                                          <CheckIcon className="h-2.5 w-2.5 text-white" />
-                                        </span>
-                                      ) : (
-                                        <span className="absolute -left-6 top-0.5 h-4 w-4 rounded-full border-2 border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900" />
-                                      )}
-                                      <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                                        SPV Creation
-                                      </span>
-                                    </div>
-
-                                    {/* Ownership Transfer */}
-                                    <div className="relative">
-                                      {asset.ownershipTransferred || asset.status === 'ready_for_tokenization' || asset.status === 'Tokenized' ? (
-                                        <span className="absolute -left-6 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 ring-4 ring-green-500/15">
-                                          <CheckIcon className="h-2.5 w-2.5 text-white" />
-                                        </span>
-                                      ) : (
-                                        <span className="absolute -left-6 top-0.5 h-4 w-4 rounded-full border-2 border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900" />
-                                      )}
-                                      <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                                        Ownership Transfer
-                                      </span>
-                                    </div>
-
-                                    {/* Blockchain Tokenization */}
-                                    <div className="relative">
-                                      {asset.status === 'Tokenized' || asset.status === 'ready_for_tokenization' ? (
-                                        <span className="absolute -left-6 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 ring-4 ring-green-500/15">
-                                          <CheckIcon className="h-2.5 w-2.5 text-white" />
-                                        </span>
-                                      ) : (
-                                        <span className="absolute -left-6 top-0.5 h-4 w-4 rounded-full border-2 border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900" />
-                                      )}
-                                      <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                                        Blockchain Tokenization
-                                        {asset.status === 'ready_for_tokenization' && (
-                                          <span className="ml-2 rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-semibold text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300">
-                                            Pending blockchain node
-                                          </span>
-                                        )}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-zinc-400">
+                            <span>Fractional Shares:</span>
+                            <span className="font-semibold text-zinc-200">
+                              {totalShares.toLocaleString()} Shares
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-zinc-400">
+                            <span>Reference Price (Valuation / Shares):</span>
+                            <span className="font-bold text-emerald-400 font-mono">
+                              {formatLKR(referencePrice)} / share
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-zinc-400 pt-1 border-t border-zinc-800/60">
+                            <span>Title & Authenticity:</span>
+                            <span className={`font-semibold flex items-center gap-1 ${isApproved ? "text-emerald-400" : "text-amber-400"}`}>
+                              {isApproved ? (
+                                <>
+                                  <FileCheck className="w-3.5 h-3.5" />
+                                  <span>✓ Title Verified Genuine</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Clock className="w-3.5 h-3.5" />
+                                  <span>Cadastral Audit Pending</span>
+                                </>
+                              )}
+                            </span>
                           </div>
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
+                      </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Consent Modal                                                        */}
-      {/* ------------------------------------------------------------------ */}
-      {showConsentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200/60 bg-white shadow-2xl dark:border-zinc-700/60 dark:bg-zinc-900">
-            <div className="h-1.5 w-full bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500" />
-            <div className="p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/25">
-                  <SparklesIcon className="h-5 w-5" />
-                </div>
-                <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-                  Proceed with Tokenization
-                </h2>
-              </div>
+                      {/* Actions & Verification Authority Status */}
+                      <div className="pt-3 border-t border-zinc-800/60 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isPending && (
+                            <div className="flex-1 min-w-[180px] py-2 px-3 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-xl text-xs flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span className="font-medium">Awaiting Authority Verification</span>
+                            </div>
+                          )}
 
-              <p className="mb-4 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Your asset has been approved for tokenization. Do you agree to proceed with the following steps:
-              </p>
+                          {isTokenized && !isInvestor && (
+                            <Link
+                              to={`/marketplace?sellAsset=${asset.assetId}`}
+                              className="flex-1 min-w-[180px] py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold text-center"
+                            >
+                              List Tokens for Sale
+                            </Link>
+                          )}
+                          {isApproved && !isTokenized && !isInvestor && (
+                            <button
+                              onClick={() => navigate(`/tokenization/preview/${asset.assetId}`)}
+                              className="flex-1 min-w-[170px] py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              <Coins className="w-3.5 h-3.5 text-white" />
+                              Proceed to Tokenization Module →
+                            </button>
+                          )}
 
-              <ul className="mb-4 space-y-2.5">
-                <li className="flex items-start gap-2.5 text-sm text-zinc-600 dark:text-zinc-400">
-                  <CheckIcon className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-green-500" />
-                  Create a Special Purpose Vehicle (SPV) for your asset
-                </li>
-                <li className="flex items-start gap-2.5 text-sm text-zinc-600 dark:text-zinc-400">
-                  <CheckIcon className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-green-500" />
-                  Transfer ownership of the asset to the company via the SPV
-                </li>
-                <li className="flex items-start gap-2.5 text-sm text-zinc-600 dark:text-zinc-400">
-                  <CheckIcon className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-green-500" />
-                  Initiate blockchain tokenization
-                </li>
-              </ul>
+                          {isTokenized && (
+                            <button
+                              onClick={() => navigate("/owner/portfolio")}
+                              className="flex-1 min-w-[140px] py-2 px-3 bg-zinc-800 hover:bg-zinc-700 text-emerald-400 font-semibold text-xs rounded-xl border border-emerald-500/30 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              <Building className="w-3.5 h-3.5 text-emerald-400" />
+                              View in Portfolio →
+                            </button>
+                          )}
 
-              <div className="mb-6 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3 text-xs text-amber-700 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-300">
-                <AlertIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <span>
-                  Note: This process is irreversible. Please ensure you understand the implications before proceeding.
-                </span>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={handleConfirmConsent}
-                  disabled={consenting}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-green-500/25 transition-all hover:shadow-lg hover:shadow-green-500/35 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-                >
-                  {consenting ? 'Processing…' : 'I Agree, Proceed'}
-                </button>
-                <button
-                  onClick={handleCancelConsent}
-                  disabled={consenting}
-                  className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Re-upload Modal                                                      */}
-      {/* ------------------------------------------------------------------ */}
-      {showReuploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200/60 bg-white shadow-2xl dark:border-zinc-700/60 dark:bg-zinc-900">
-            <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500" />
-            <div className="p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg shadow-orange-500/25">
-                  <UploadIcon className="h-5 w-5" />
-                </div>
-                <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-                  Re-upload Documents
-                </h2>
-              </div>
-
-              <p className="mb-4 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Your asset verification failed. Please re-upload the required documents to try again.
-              </p>
-
-              <div className="space-y-4">
-                <div>
-                  <label className={labelClass}>
-                    Deed Document <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => setReuploadFiles({ ...reuploadFiles, deed: e.target.files?.[0] })}
-                    className={fileClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>
-                    Survey Plan <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => setReuploadFiles({ ...reuploadFiles, surveyPlan: e.target.files?.[0] })}
-                    className={fileClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={`${labelClass} flex items-center gap-2`}>
-                    Extracts
-                    <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                      Optional
-                    </span>
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => setReuploadFiles({ ...reuploadFiles, extracts: e.target.files?.[0] })}
-                    className={fileClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={`${labelClass} flex items-center gap-2`}>
-                    Prior Deeds
-                    <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                      Optional
-                    </span>
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => setReuploadFiles({ ...reuploadFiles, priorDeeds: e.target.files?.[0] })}
-                    className={fileClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={`${labelClass} flex items-center gap-2`}>
-                    Certificates
-                    <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                      Optional
-                    </span>
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => setReuploadFiles({ ...reuploadFiles, certificates: e.target.files?.[0] })}
-                    className={fileClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Asset Images (up to 5)</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files);
-                      if (files.length > 5) {
-                        setError('Maximum 5 images allowed');
-                        return;
-                      }
-                      setReuploadImages(files);
-                    }}
-                    className={fileClass}
-                  />
-                  {reuploadImages.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {reuploadImages.map((file, index) => (
-                        <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden border border-zinc-300">
-                          <img
-                            src={URL.createObjectURL(file)}
-                            alt={`Preview ${index + 1}`}
-                            className="w-full h-full object-cover"
-                          />
                           <button
-                            type="button"
-                            onClick={() => {
-                              const newImages = reuploadImages.filter((_, i) => i !== index);
-                              setReuploadImages(newImages);
-                            }}
-                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
+                            onClick={() => setExpandedAssetId(isExpanded ? null : asset.assetId)}
+                            className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0"
                           >
-                            ×
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            {isExpanded ? "Less" : "Audit"}
                           </button>
                         </div>
-                      ))}
+
+                        {/* Expanded Details */}
+                        {isExpanded && (
+                          <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800 text-xs font-mono text-zinc-400 space-y-1.5 mt-2">
+                            <div>
+                              <span className="text-zinc-500 block">Deed Document Hash:</span>
+                              <div className="flex items-center justify-between text-zinc-300 break-all text-[11px]">
+                                <span>{asset.documentHash || "Not recorded"}</span>
+                                <button
+                                  onClick={() => handleCopyHash(asset.documentHash)}
+                                  className="ml-2 text-zinc-400 hover:text-white shrink-0"
+                                  title="Copy Hash"
+                                >
+                                  {copiedHash === asset.documentHash ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <span className="text-zinc-500 block">Metadata URI:</span>
+                              <span className="text-blue-400 break-all text-[11px]">
+                                {asset.metadataURI || "Not recorded"}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-1">
+                              <span>Verification Review:</span>
+                              <span className={isApproved ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
+                                {isApproved ? "Approved by Legal Authority" : "Under Authority Review"}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: OWNER KYC & COMPLIANCE */}
+        {activeTab === "kyc" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Status Card */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
+              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-blue-400" />
+                Asset Owner KYC Verification
+              </h2>
+
+              {kycStatus ? (
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between py-2 border-b border-zinc-800">
+                    <span className="text-zinc-400">Verification status:</span>
+                    <span className={`font-bold uppercase ${kycStatus.verificationStatus === "approved" ? "text-emerald-400" : kycStatus.verificationStatus === "rejected" ? "text-rose-400" : "text-amber-400"}`}>
+                      {(kycStatus.verificationStatus || "pending").replace("_", " ")}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-zinc-800">
+                    <span className="text-zinc-400">Face match:</span>
+                    <span className="font-semibold text-white">{kycSteps(kycStatus)[2].done ? `${kycStatus.faceScore}% confidence` : "Not checked yet"}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-zinc-800">
+                    <span className="text-zinc-400">Risk score:</span>
+                    <span className="font-semibold text-white">{kycSteps(kycStatus)[2].done ? `${kycStatus.riskScore}/100` : "Not checked yet"}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-zinc-800">
+                    <span className="text-zinc-400">Document authenticity:</span>
+                    <span className={`font-semibold ${kycStatus.documentAuthentic ? "text-emerald-400" : "text-zinc-300"}`}>
+                      {kycStatus.documentAuthentic ? "✓ Authentic" : kycSteps(kycStatus)[2].done ? "Not confirmed" : "Not checked yet"}
+                    </span>
+                  </div>
+                  {kycStatus.verifiedAt && (
+                    <div className="flex justify-between py-2 border-b border-zinc-800">
+                      <span className="text-zinc-400">Verified on:</span>
+                      <span className="font-semibold text-white">{new Date(kycStatus.verifiedAt).toLocaleString()}</span>
                     </div>
                   )}
-                  <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                    {reuploadImages.length}/5 images selected
-                  </p>
+                  {kycStatus.rejectionReason && <p className="text-rose-300 text-xs">Reason: {kycStatus.rejectionReason}</p>}
+                  <ul className="pt-2 space-y-1.5">
+                    {kycSteps(kycStatus).map((st) => (
+                      <li key={st.key} className={`flex items-center gap-2 text-xs ${st.done ? "text-emerald-300" : "text-zinc-500"}`}>
+                        {st.done ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />} {st.label}
+                      </li>
+                    ))}
+                  </ul>
+                  {view === "kycStatus" && kycStatus.verificationStatus !== "approved" && (
+                    <Link to="/owner/kyc" className="inline-block mt-2 text-sm text-blue-300">Continue verification →</Link>
+                  )}
                 </div>
+              ) : (
+                <p className="text-sm text-zinc-400">
+                  You have not started identity verification yet.{" "}
+                  {view === "kycStatus" && <Link to="/owner/kyc" className="text-blue-300">Start now →</Link>}
+                </p>
+              )}
+            </div>
+
+            {/* Document Uploads */}
+            {view !== "kycStatus" && <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h2 className="text-lg font-bold text-white mb-2">Owner Identity Credentials</h2>
+
+              <IdMethodPicker value={idType} onChange={setIdType} disabled={uploading} />
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  {idMethod(idType)[2]}
+                </label>
+                <input
+                  type="text"
+                  value={idNumber}
+                  onChange={(e) => setIdNumber(e.target.value)}
+                  placeholder={`Enter your ${idMethod(idType)[2].toLowerCase()}`}
+                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none"
+                />
               </div>
 
-              <div className="mt-6 flex gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Identity Document (PDF / Image)
+                </label>
+                <input
+                  type="file"
+                  onChange={handleDocumentUpload}
+                  disabled={uploading}
+                  className="w-full text-xs text-zinc-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">
+                  Owner Live Selfie Biometric
+                </label>
                 <button
-                  onClick={handleConfirmReupload}
-                  disabled={reuploading || !reuploadFiles.deed || !reuploadFiles.surveyPlan}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-orange-500/25 transition-all hover:shadow-lg hover:shadow-orange-500/35 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                  type="button"
+                  onClick={() => setShowLivenessModal(true)}
+                  disabled={uploading}
+                  className="mb-2 w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
                 >
-                  {reuploading ? 'Uploading…' : 'Re-upload & Verify'}
+                  {uploading ? "Processing..." : "Capture Live Selfie"}
                 </button>
-                <button
-                  onClick={handleCancelReupload}
-                  disabled={reuploading}
-                  className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                >
-                  Cancel
-                </button>
+                <input
+                  type="file"
+                  onChange={handleSelfieUpload}
+                  disabled={uploading}
+                  className="w-full text-xs text-zinc-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white"
+                />
+              </div>
+
+              <button
+                onClick={handleVerification}
+                disabled={verifying}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-blue-500/20 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {verifying ? "Processing AI OCR & Biometrics..." : "Run AI KYC Verification"}
+              </button>
+            </div>}
+          </div>
+        )}
+
+        {/* MODAL: SUBMIT A PROPERTY FOR VERIFICATION */}
+        {showAddAssetModal && (() => {
+          const val = convert(Number(assetUploadData.valuation), currency, "LKR"); // always LKR for the preview
+          const shares = Number(assetUploadData.totalShares);
+          const ready = val > 0 && shares > 0;
+          const field = "w-full px-3.5 py-2.5 rounded-xl border border-[#1b2440] bg-[#0e1426] text-sm text-white placeholder:text-[#6b7599] focus:outline-none focus:border-indigo-500";
+          const label = "block text-sm font-medium text-[#c3cae2] mb-1.5";
+          const hint = "text-xs text-[#98a2c3] mt-1.5";
+          const fileBox = (name, title, note) => (
+            <label className={`flex items-center gap-3 rounded-xl border border-dashed p-3.5 cursor-pointer ${assetFiles[name] ? "border-emerald-500/50 bg-emerald-500/5" : "border-[#29345a] bg-[#0e1426] hover:border-indigo-500/60"}`}>
+              <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${assetFiles[name] ? "bg-emerald-500/15 text-emerald-300" : "bg-indigo-500/10 text-indigo-300"}`}>
+                {assetFiles[name] ? <CheckCircle2 className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-white">{title}</span>
+                <span className="block text-xs text-[#98a2c3] truncate">{assetFiles[name] ? assetFiles[name].name : note}</span>
+              </span>
+              <input type="file" accept="image/*,.pdf" className="sr-only" onChange={(e) => setAssetFiles({ ...assetFiles, [name]: e.target.files?.[0] })} />
+            </label>
+          );
+          return (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4" role="dialog" aria-modal="true" aria-label="Submit a property">
+              <div className="bg-[#0b1124] border border-[#1b2440] rounded-2xl w-full max-w-2xl shadow-2xl relative max-h-[92vh] flex flex-col overflow-hidden">
+                <div className="flex items-start justify-between gap-4 p-5 sm:p-6 border-b border-[#1b2440]">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-300 flex items-center justify-center shrink-0"><Building className="w-5 h-5" /></span>
+                    <div className="min-w-0">
+                      <h2 className="text-xl font-bold text-white">Submit a property</h2>
+                      <p className="text-sm text-[#98a2c3]">Tell us about the land or building. The compliance team checks your documents before it can be tokenized.</p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setShowAddAssetModal(false)} aria-label="Close" className="p-2 rounded-lg text-[#98a2c3] hover:text-white hover:bg-[#141c33] shrink-0"><X className="w-5 h-5" /></button>
+                </div>
+
+                <form onSubmit={handleAssetUpload} className="flex flex-col min-h-0">
+                  <div className="overflow-y-auto p-5 sm:p-6 space-y-7">
+                    {error && <p role="alert" className="flex items-start gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />{error}</p>}
+
+                    <section className="space-y-4">
+                      <h3 className="flex items-center gap-2.5 font-semibold text-white"><span className="w-6 h-6 rounded-full bg-indigo-500/15 text-indigo-300 text-xs font-bold flex items-center justify-center">1</span>About the property</h3>
+                      <div>
+                        <label className={label} htmlFor="asset-name">Property name <span className="text-rose-300">*</span></label>
+                        <input id="asset-name" type="text" value={assetUploadData.assetName} onChange={(e) => setAssetUploadData({ ...assetUploadData, assetName: e.target.value })} placeholder="e.g. Kegalle hillside land" className={field} required />
+                      </div>
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className={label} htmlFor="asset-type">Type</label>
+                          <select id="asset-type" value={assetUploadData.assetType} onChange={(e) => setAssetUploadData({ ...assetUploadData, assetType: e.target.value })} className={field}>
+                            <option value="real_estate">Residential real estate</option>
+                            <option value="commercial">Commercial plaza</option>
+                            <option value="villa">Boutique heritage villa</option>
+                            <option value="land">Development land</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className={label} htmlFor="asset-location">Location <span className="text-rose-300">*</span></label>
+                          <input id="asset-location" type="text" value={assetUploadData.location} onChange={(e) => setAssetUploadData({ ...assetUploadData, location: e.target.value })} placeholder="e.g. Kegalle, Sabaragamuwa" className={field} required />
+                        </div>
+                      </div>
+                      <div>
+                        <label className={label} htmlFor="asset-desc">Short description <span className="text-[#98a2c3] font-normal">(optional)</span></label>
+                        <input id="asset-desc" type="text" value={assetUploadData.description} onChange={(e) => setAssetUploadData({ ...assetUploadData, description: e.target.value })} placeholder="Land size, building, road access…" className={field} />
+                      </div>
+                    </section>
+
+                    <section className="space-y-4">
+                      <h3 className="flex items-center gap-2.5 font-semibold text-white"><span className="w-6 h-6 rounded-full bg-indigo-500/15 text-indigo-300 text-xs font-bold flex items-center justify-center">2</span>Value and tokens</h3>
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className={label} htmlFor="asset-val">Property value ({currency}) <span className="text-rose-300">*</span></label>
+                          <input id="asset-val" type="number" min="0" step="any" value={assetUploadData.valuation} onChange={(e) => setAssetUploadData({ ...assetUploadData, valuation: e.target.value })} placeholder={`e.g. ${Math.round(convert(10000000, "LKR", currency)).toLocaleString()}`} className={field} required />
+                          <p className={hint}>The appraised value from your valuation report.</p>
+                        </div>
+                        <div>
+                          <label className={label} htmlFor="asset-shares">Number of tokens <span className="text-rose-300">*</span></label>
+                          <input id="asset-shares" type="number" min="1" value={assetUploadData.totalShares} onChange={(e) => setAssetUploadData({ ...assetUploadData, totalShares: e.target.value })} placeholder="e.g. 1000" className={field} required />
+                          <p className={hint}>The property is split into this many equal shares.</p>
+                        </div>
+                      </div>
+                      <div>
+                        <label className={label} htmlFor="asset-symbol">Short code <span className="text-[#98a2c3] font-normal">(optional)</span></label>
+                        <input id="asset-symbol" type="text" value={assetUploadData.symbol} onChange={(e) => setAssetUploadData({ ...assetUploadData, symbol: e.target.value })} placeholder="e.g. KEG-01" className={`${field} sm:max-w-xs`} />
+                      </div>
+                      <div className="rounded-xl border border-[#1b2440] bg-[#0e1426] p-4" aria-live="polite">
+                        {ready ? (
+                          <p className="text-sm text-[#c3cae2]">
+                            Each token will start at <strong className="text-white">{formatLKR(val / shares)}</strong>, and <strong className="text-white">1 token = {(100 / shares).toFixed(shares > 1000 ? 4 : 2)}%</strong> of the property.
+                          </p>
+                        ) : <p className="text-sm text-[#98a2c3]">Enter the value and number of tokens to see the price of one token.</p>}
+                      </div>
+                    </section>
+
+                    <section className="space-y-3">
+                      <h3 className="flex items-center gap-2.5 font-semibold text-white"><span className="w-6 h-6 rounded-full bg-indigo-500/15 text-indigo-300 text-xs font-bold flex items-center justify-center">3</span>Documents</h3>
+                      <p className="text-sm text-[#98a2c3]">PDF or photo. These are used to prove you own the property.</p>
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        {fileBox("deed", "Title deed", "Choose a file")}
+                        {fileBox("surveyPlan", "Survey plan", "Choose a file")}
+                      </div>
+                    </section>
+
+                    <section className="rounded-xl border border-[#1b2440] bg-[#0e1426] p-4">
+                      <h3 className="flex items-center gap-2 text-sm font-semibold text-white mb-2"><Clock className="w-4 h-4 text-indigo-300" />What happens next</h3>
+                      <ol className="space-y-1.5 text-sm text-[#98a2c3] list-decimal pl-5">
+                        <li>Your deed is read automatically and a fingerprint of it is saved.</li>
+                        <li>A compliance officer checks the land registry and approves it.</li>
+                        <li>You create {ready ? shares.toLocaleString() : "your"} tokens in your wallet and can put them on sale.</li>
+                      </ol>
+                    </section>
+                  </div>
+
+                  <div className="flex flex-col-reverse sm:flex-row gap-3 p-5 sm:px-6 border-t border-[#1b2440] bg-[#0b1124]">
+                    <button type="button" onClick={() => setShowAddAssetModal(false)} className="sm:w-40 py-3 rounded-xl border border-[#1b2440] bg-[#0e1426] hover:bg-[#141c33] text-sm font-semibold text-[#c3cae2]">Cancel</button>
+                    <button type="submit" disabled={assetUploading} className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed">
+                      {assetUploading ? "Uploading and checking…" : "Submit property"}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
+      </main>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* KYC Re-upload Modal                                                  */}
-      {/* ------------------------------------------------------------------ */}
-      {showKYCReuploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200/60 bg-white shadow-2xl dark:border-zinc-700/60 dark:bg-zinc-900">
-            <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500" />
-            <div className="p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg shadow-orange-500/25">
-                  <UploadIcon className="h-5 w-5" />
-                </div>
-                <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-                  Re-upload KYC Documents
-                </h2>
-              </div>
+      {/* Add Wallet Modal */}
+      <AddWalletModal
+        isOpen={showAddWalletModal}
+        onClose={() => setShowAddWalletModal(false)}
+        onSuccess={() => detectWallet()}
+      />
 
-              <p className="mb-4 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                Your KYC verification failed. Please re-upload your documents to try again.
-              </p>
-
-              <div className="space-y-4">
-                <div>
-                  <label className={labelClass}>ID Number</label>
-                  <input
-                    type="text"
-                    value={kycReuploadIdNumber}
-                    onChange={(e) => setKycReuploadIdNumber(e.target.value)}
-                    placeholder="Enter your ID number"
-                    className={inputClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={`${labelClass} flex items-center gap-2`}>
-                    <DocumentIcon className="h-4 w-4 text-blue-500" />
-                    ID Document
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setKycReuploadFiles({ ...kycReuploadFiles, document: e.target.files?.[0] })}
-                    className={fileClass}
-                  />
-                </div>
-
-                <div>
-                  <label className={`${labelClass} flex items-center gap-2`}>
-                    <PhotoIcon className="h-4 w-4 text-blue-500" />
-                    Selfie
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setKycReuploadFiles({ ...kycReuploadFiles, selfie: e.target.files?.[0] })}
-                    className={fileClass}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-6 flex gap-3">
-                <button
-                  onClick={handleConfirmKYCReupload}
-                  disabled={reuploadingKYC || !kycReuploadIdNumber}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-orange-500/25 transition-all hover:shadow-lg hover:shadow-orange-500/35 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-                >
-                  {reuploadingKYC ? 'Uploading…' : 'Re-upload & Verify'}
-                </button>
-                <button
-                  onClick={handleCancelKYCReupload}
-                  disabled={reuploadingKYC}
-                  className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Liveness Detection Modal                                             */}
-      {/* ------------------------------------------------------------------ */}
+      {/* Liveness Detection Modal */}
       {showLivenessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <LivenessDetection

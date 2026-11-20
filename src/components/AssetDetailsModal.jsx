@@ -25,7 +25,7 @@ export default function AssetDetailsModal({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-[#94A3BB]/15">
           <div className="flex items-center space-x-3">
-            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-[#4F46E5]/20 text-[#00E5FF] border border-[#4F46E5]/40">
+            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-[#16a34a]/20 text-[#22e07a] border border-[#16a34a]/40">
               #{asset.assetId} • {asset.symbol}
             </span>
             <h2 className="text-xl font-bold text-[#FFFFFF] truncate max-w-md">{asset.name}</h2>
@@ -46,18 +46,18 @@ export default function AssetDetailsModal({
             <div className="absolute inset-0 bg-gradient-to-t from-[#050816] via-[#050816]/40 to-transparent" />
             <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
               <div>
-                <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-[#4F46E5] text-[#FFFFFF]">
+                <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-[#16a34a] text-[#FFFFFF]">
                   {asset.propertyType}
                 </span>
                 <p className="text-xs text-[#94A3BB] mt-2 flex items-center gap-1.5 font-medium">
-                  <MapPin className="w-4 h-4 text-[#00E5FF]" />
+                  <MapPin className="w-4 h-4 text-[#22e07a]" />
                   {asset.location}
                 </p>
               </div>
               <div className="text-right">
                 <p className="text-xs text-[#94A3BB] font-medium">Blockchain Status</p>
-                <span className="text-sm font-bold text-[#00E5FF] flex items-center gap-1 justify-end">
-                  <ShieldCheck className="w-4 h-4 text-[#00E5FF]" />
+                <span className="text-sm font-bold text-[#22e07a] flex items-center gap-1 justify-end">
+                  <ShieldCheck className="w-4 h-4 text-[#22e07a]" />
                   {asset.status}
                 </span>
               </div>
@@ -84,8 +84,8 @@ export default function AssetDetailsModal({
 
             <div className="p-4 rounded-xl bg-[#090D22] border border-[#94A3BB]/20">
               <p className="text-xs text-[#94A3BB]">Fractional ERC-1155 Supply</p>
-              <p className="text-lg font-bold text-[#00E5FF] mt-1 flex items-center gap-1">
-                <Coins className="w-4 h-4 text-[#00E5FF]" />
+              <p className="text-lg font-bold text-[#22e07a] mt-1 flex items-center gap-1">
+                <Coins className="w-4 h-4 text-[#22e07a]" />
                 {asset.totalShares.toLocaleString()} Shares
               </p>
               <p className="text-[11px] text-[#94A3BB]/70 mt-1">
@@ -95,10 +95,10 @@ export default function AssetDetailsModal({
 
             <div className="p-4 rounded-xl bg-[#090D22] border border-[#94A3BB]/20">
               <p className="text-xs text-[#94A3BB]">Your Connected Holdings</p>
-              <p className="text-lg font-bold text-[#00E5FF] mt-1">
+              <p className="text-lg font-bold text-[#22e07a] mt-1">
                 {userTokens} Shares ({ownershipPercentage}%)
               </p>
-              <p className="text-[11px] text-[#00E5FF]/80 mt-1">
+              <p className="text-[11px] text-[#22e07a]/80 mt-1">
                 Equity: LKR {userEquityLKR.toLocaleString()}
               </p>
             </div>
@@ -107,20 +107,20 @@ export default function AssetDetailsModal({
           {/* Cryptographic & Verifiable Records */}
           <div className="p-4 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 space-y-3">
             <h4 className="text-xs font-semibold text-[#FFFFFF] flex items-center gap-1.5 uppercase tracking-wider">
-              <Hash className="w-4 h-4 text-[#00E5FF]" />
+              <Hash className="w-4 h-4 text-[#22e07a]" />
               Verifiable Blockchain Deed Provenance
             </h4>
 
             <div>
               <p className="text-[11px] text-[#94A3BB]">SHA-256 Title Deed Integrity Fingerprint:</p>
-              <p className="text-xs font-mono text-[#00E5FF] bg-[#050816] p-2.5 rounded-lg border border-[#94A3BB]/20 break-all select-all mt-1">
+              <p className="text-xs font-mono text-[#22e07a] bg-[#050816] p-2.5 rounded-lg border border-[#94A3BB]/20 break-all select-all mt-1">
                 {asset.documentHash}
               </p>
             </div>
 
             <div>
               <p className="text-[11px] text-[#94A3BB]">IPFS Metadata Content Identifier (CID):</p>
-              <p className="text-xs font-mono text-[#4F46E5] bg-[#050816] p-2.5 rounded-lg border border-[#94A3BB]/20 break-all select-all mt-1">
+              <p className="text-xs font-mono text-[#16a34a] bg-[#050816] p-2.5 rounded-lg border border-[#94A3BB]/20 break-all select-all mt-1">
                 {asset.metadataURI}
               </p>
             </div>
@@ -137,7 +137,7 @@ export default function AssetDetailsModal({
         {/* Footer Actions */}
         <div className="p-6 border-t border-[#94A3BB]/15 bg-[#050816]/70 flex items-center justify-between">
           <p className="text-xs text-[#94A3BB]">
-            Smart Contract: <span className="text-[#00E5FF] font-mono">AssetToken.sol</span>
+            Smart Contract: <span className="text-[#22e07a] font-mono">AssetToken.sol</span>
           </p>
           <div className="flex items-center space-x-3">
             {isTokenized && onOpenBuy && (
@@ -146,7 +146,7 @@ export default function AssetDetailsModal({
                   onClose();
                   onOpenBuy(asset);
                 }}
-                className="flex items-center space-x-2 px-4 py-2 text-sm font-semibold rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-[#FFFFFF] transition-all cursor-pointer shadow-lg shadow-[#4F46E5]/30"
+                className="flex items-center space-x-2 px-4 py-2 text-sm font-semibold rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-[#FFFFFF] transition-all cursor-pointer shadow-lg shadow-[#16a34a]/30"
               >
                 <ShoppingCart className="w-4 h-4" />
                 <span>Buy Shares</span>
@@ -158,7 +158,7 @@ export default function AssetDetailsModal({
                   onClose();
                   onOpenTransfer(asset);
                 }}
-                className="flex items-center space-x-2 px-4 py-2 text-sm font-bold rounded-xl bg-[#00E5FF] hover:bg-[#00cbe2] text-[#050816] transition-all cursor-pointer shadow-lg shadow-[#00E5FF]/30"
+                className="flex items-center space-x-2 px-4 py-2 text-sm font-bold rounded-xl bg-[#22e07a] hover:bg-[#1fcf6c] text-[#050816] transition-all cursor-pointer shadow-lg shadow-[#22e07a]/30"
               >
                 <ArrowRightLeft className="w-4 h-4" />
                 <span>Transfer Shares</span>

@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { referenceTokenPriceLKR } from "../lib/tokenPrice";
+import { useCurrency } from "../context/CurrencyContext";
 import {
   Wallet,
   Building,
@@ -24,6 +26,7 @@ export default function DashboardView({
   onOpenTransfer,
   onOpenBuy
 }) {
+  const { currency, formatLKR } = useCurrency();
   const [selectedTimeframe, setSelectedTimeframe] = useState("30D");
 
   // Calculate user portfolio metrics
@@ -32,7 +35,7 @@ export default function DashboardView({
 
   const totalUserPortfolioLKR = ownedAssets.reduce((sum, a) => {
     const shares = userBalances[a.assetId] || 0;
-    const price = a.sharePriceLKR || (a.valuationLKR / a.totalShares);
+    const price = referenceTokenPriceLKR(a);
     return sum + shares * price;
   }, 0);
 
@@ -90,11 +93,11 @@ export default function DashboardView({
           </div>
           <div className="mt-3">
             <h3 className="text-2xl font-black text-white tracking-tight">
-              LKR {totalUserPortfolioLKR.toLocaleString()}
+              {formatLKR(totalUserPortfolioLKR)}
             </h3>
             <p className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1 font-semibold">
               <TrendingUp className="w-3 h-3" />
-              <span>≈ ${(totalUserPortfolioLKR / 310).toFixed(0)} USD</span>
+              <span>{currency !== "LKR" ? `≈ LKR ${totalUserPortfolioLKR.toLocaleString()}` : `≈ $${(totalUserPortfolioLKR / 310).toFixed(0)} USD`}</span>
             </p>
           </div>
         </div>
@@ -109,10 +112,10 @@ export default function DashboardView({
           </div>
           <div className="mt-3">
             <h3 className="text-2xl font-black text-emerald-400 tracking-tight">
-              LKR {annualRentalIncomeLKR.toLocaleString()}
+              {formatLKR(annualRentalIncomeLKR)}
             </h3>
             <p className="text-[11px] text-slate-400 mt-1">
-              Monthly avg: <strong className="text-slate-200">LKR {monthlyRentalIncomeLKR.toLocaleString()}</strong>
+              Monthly avg: <strong className="text-slate-200">{formatLKR(monthlyRentalIncomeLKR)}</strong>
             </p>
           </div>
         </div>
@@ -159,7 +162,7 @@ export default function DashboardView({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[#00E5FF]" />
+              <TrendingUp className="w-4 h-4 text-[#22e07a]" />
               Rental Income & Yield Trajectory
             </h3>
             <p className="text-xs text-[#94A3BB]">Historical performance across distributed tenant cash flows</p>
@@ -172,7 +175,7 @@ export default function DashboardView({
                 onClick={() => setSelectedTimeframe(t)}
                 className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                   selectedTimeframe === t
-                    ? "bg-[#4F46E5] text-white shadow-sm"
+                    ? "bg-[#16a34a] text-white shadow-sm"
                     : "text-[#94A3BB] hover:text-white"
                 }`}
               >
@@ -182,13 +185,13 @@ export default function DashboardView({
           </div>
         </div>
 
-        {/* SVG Area Chart with Neon Cyan #00E5FF & Indigo #4F46E5 Gradient */}
+        {/* SVG Area Chart with Neon Cyan #22e07a & Indigo #16a34a Gradient */}
         <div className="h-48 w-full pt-4">
           <svg className="w-full h-full overflow-visible" viewBox="0 0 700 180" preserveAspectRatio="none">
             <defs>
               <linearGradient id="yieldGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#00E5FF" stopOpacity="0.35" />
-                <stop offset="60%" stopColor="#4F46E5" stopOpacity="0.12" />
+                <stop offset="0%" stopColor="#22e07a" stopOpacity="0.35" />
+                <stop offset="60%" stopColor="#16a34a" stopOpacity="0.12" />
                 <stop offset="100%" stopColor="#050816" stopOpacity="0.0" />
               </linearGradient>
             </defs>
@@ -208,7 +211,7 @@ export default function DashboardView({
             <path
               d="M 50 140 C 120 165, 180 95, 250 95 C 320 35, 380 35, 450 115 C 520 85, 580 85, 650 55"
               fill="none"
-              stroke="#00E5FF"
+              stroke="#22e07a"
               strokeWidth="3"
             />
 
@@ -223,7 +226,7 @@ export default function DashboardView({
               { x: 650, y: 55, l: "Apr 24" }
             ].map((pt, i) => (
               <g key={i}>
-                <circle cx={pt.x} cy={pt.y} r="5" fill="#050816" stroke="#00E5FF" strokeWidth="2.5" />
+                <circle cx={pt.x} cy={pt.y} r="5" fill="#050816" stroke="#22e07a" strokeWidth="2.5" />
                 <text x={pt.x} y="175" textAnchor="middle" fill="#94A3BB" fontSize="11" fontFamily="sans-serif">
                   {pt.l}
                 </text>
@@ -285,7 +288,7 @@ export default function DashboardView({
               <tbody className="divide-y divide-slate-800/80">
                 {ownedAssets.map((asset) => {
                   const shares = userBalances[asset.assetId] || 0;
-                  const price = asset.sharePriceLKR || (asset.valuationLKR / asset.totalShares);
+                  const price = referenceTokenPriceLKR(asset);
                   const equityVal = shares * price;
                   const rentalInc = Math.round(equityVal * 0.094);
                   const pct = asset.totalShares > 0 ? ((shares / asset.totalShares) * 100).toFixed(1) : "0.0";
@@ -321,11 +324,11 @@ export default function DashboardView({
                       </td>
 
                       <td className="p-4 font-bold text-slate-100">
-                        LKR {equityVal.toLocaleString()}
+                        {formatLKR(equityVal)}
                       </td>
 
                       <td className="p-4 font-bold text-emerald-400">
-                        +LKR {rentalInc.toLocaleString()} / yr
+                        +{formatLKR(rentalInc)} / yr
                       </td>
 
                       <td className="p-4 pr-6 text-right">

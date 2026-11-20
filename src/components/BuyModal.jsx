@@ -16,6 +16,7 @@ import {
 import { ethers } from "ethers";
 import { buySharesApi, swapTokensApi, fetchAvailableSupply } from "../services/apiService";
 import { getBrowserProvider, transferFractionalTokens } from "../services/contractService";
+import { referenceTokenPriceLKR } from "../lib/tokenPrice";
 
 export default function BuyModal({
   asset,
@@ -64,13 +65,11 @@ export default function BuyModal({
   const userSourceTokens = sourceAsset ? (userBalances[sourceAsset.assetId] || 0) : 0;
   const numSwapSource = Number(swapSourceAmount) || 0;
 
-  const srcPrice = sourceAsset
-    ? (sourceAsset.sharePriceLKR || (sourceAsset.valuationLKR / sourceAsset.totalShares))
-    : 10000;
-  const tgtPrice = asset.sharePriceLKR || (asset.valuationLKR / asset.totalShares);
+  const srcPrice = referenceTokenPriceLKR(sourceAsset);
+  const tgtPrice = referenceTokenPriceLKR(asset);
 
   const totalExchangedLKR = numSwapSource * srcPrice;
-  const targetSharesReceived = Math.max(1, Math.floor(totalExchangedLKR / tgtPrice));
+  const targetSharesReceived = tgtPrice > 0 ? Math.max(1, Math.floor(totalExchangedLKR / tgtPrice)) : 0;
   const remainingSourceTokens = Math.max(0, userSourceTokens - numSwapSource);
   const newTargetBalanceFromSwap = (userBalance || 0) + targetSharesReceived;
 
@@ -220,11 +219,11 @@ export default function BuyModal({
             onClick={() => setActiveTab("ETH")}
             className={`py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === "ETH"
-                ? "bg-[#4F46E5] text-white shadow-md shadow-[#4F46E5]/40"
+                ? "bg-[#16a34a] text-white shadow-md shadow-[#16a34a]/40"
                 : "text-[#94A3BB] hover:text-white hover:bg-slate-800/50"
             }`}
           >
-            <Wallet className="w-3.5 h-3.5 text-[#00E5FF]" />
+            <Wallet className="w-3.5 h-3.5 text-[#22e07a]" />
             <span>Pay with ETH</span>
           </button>
           <button
@@ -232,7 +231,7 @@ export default function BuyModal({
             onClick={() => setActiveTab("TOKEN_SWAP")}
             className={`py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === "TOKEN_SWAP"
-                ? "bg-[#00E5FF] text-[#050816] font-bold shadow-md shadow-[#00E5FF]/40"
+                ? "bg-[#22e07a] text-[#050816] font-bold shadow-md shadow-[#22e07a]/40"
                 : "text-[#94A3BB] hover:text-white hover:bg-slate-800/50"
             }`}
           >
@@ -344,7 +343,7 @@ export default function BuyModal({
               <button
                 type="submit"
                 disabled={isBuying || availableSupply === 0}
-                className="w-full py-3.5 rounded-2xl bg-[#4F46E5] hover:bg-[#4338CA] text-white font-bold text-sm shadow-lg shadow-[#4F46E5]/40 transition-all cursor-pointer disabled:opacity-50"
+                className="w-full py-3.5 rounded-2xl bg-[#16a34a] hover:bg-[#15803d] text-white font-bold text-sm shadow-lg shadow-[#16a34a]/40 transition-all cursor-pointer disabled:opacity-50"
               >
                 {isBuying ? "Processing Purchase in MetaMask..." : `Buy ${numAmount} Shares for ${totalEthCost} ETH`}
               </button>
@@ -478,7 +477,7 @@ export default function BuyModal({
               <button
                 type="submit"
                 disabled={isBuying || !sourceAsset || userSourceTokens === 0 || numSwapSource <= 0}
-                className="w-full py-3.5 rounded-2xl bg-[#00E5FF] hover:bg-[#00E5FF]/90 text-[#050816] font-extrabold text-sm shadow-lg shadow-[#00E5FF]/35 transition-all cursor-pointer disabled:opacity-50"
+                className="w-full py-3.5 rounded-2xl bg-[#22e07a] hover:bg-[#22e07a]/90 text-[#050816] font-extrabold text-sm shadow-lg shadow-[#22e07a]/35 transition-all cursor-pointer disabled:opacity-50"
               >
                 {isBuying
                   ? "Executing Cross-Property Token Swap..."

@@ -1,11 +1,19 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useCurrency } from '../../context/CurrencyContext';
 import { authAPI, kycAPI } from '../../lib/api';
+import Navbar from '../../components/Navbar';
+import { ShieldCheck, Users, Building, Coins, Flame, ArrowUpRight } from 'lucide-react';
 
 export default function AdminDashboard() {
+  // ?q= from the workspace search box filters users and assets by name/email.
+  const [searchParams] = useSearchParams();
+  const q = (searchParams.get('q') || '').trim().toLowerCase();
+  const matches = (...vals) => !q || vals.some((v) => String(v || '').toLowerCase().includes(q));
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { format } = useCurrency();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -116,7 +124,7 @@ export default function AdminDashboard() {
 
     setAssetUpdating(true);
     try {
-      await kycAPI.updateAssetStatus(selectedAsset.assetId, {
+      const response = await kycAPI.updateAssetStatus(selectedAsset.assetId, {
         verificationStatus: assetUpdateStatus,
         rejectionReason: assetUpdateStatus === 'rejected' ? assetRejectionReason : undefined,
       });
@@ -125,7 +133,7 @@ export default function AdminDashboard() {
       await fetchAssets();
 
       // Show success message
-      alert('Asset status updated successfully');
+      alert(response.data.message || 'Asset status updated successfully');
       setShowAssetModal(false);
     } catch (err) {
       console.error('Update asset status error:', err);
@@ -185,27 +193,18 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      <nav className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-            Admin Dashboard
-          </h1>
-          <div className="flex items-center gap-4">
-            <span className="text-zinc-600 dark:text-zinc-400">
-              Welcome, {user?.name}
-            </span>
-            <button
-              onClick={handleLogout}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+      <Navbar />
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 w-full">
+        {/* Page header (the sidebar already links to Dividends and Gas Analytics) */}
+        <div className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">KYC & Asset Review</h1>
+          <p className="text-zinc-400 mt-1">Verify user identities and submitted properties.</p>
+          {q && (
+            <p className="text-sm text-zinc-400 mt-2">Showing matches for “{searchParams.get('q')}”. <Link to="/dashboard/admin" className="text-blue-300">Clear search</Link></p>
+          )}
+        </div>
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg mb-6">
             {error}
@@ -285,7 +284,7 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((userItem) => (
+                  {users.filter((u) => matches(u.name, u.email, u.role)).map((userItem) => (
                     <tr key={userItem._id} className="border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800">
                       <td className="py-3 px-4 text-sm text-zinc-900 dark:text-zinc-100">
                         {userItem.name}
@@ -385,7 +384,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {assets.map((asset) => (
+                    {assets.filter((a) => matches(a.assetName, a.name, a.owner?.name, a.owner?.email)).map((asset) => (
                       <tr key={asset.assetId} className="border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800">
                         <td className="py-3 px-4 text-sm text-zinc-900 dark:text-zinc-100">
                           {asset.assetName}
@@ -397,12 +396,13 @@ export default function AdminDashboard() {
                           {asset.owner?.name || 'Unknown'}
                         </td>
                         <td className="py-3 px-4 text-sm text-zinc-600 dark:text-zinc-400">
-                          {asset.currency} {Number(asset.valuation).toLocaleString()}
+                          {format(asset.valuationLKR ?? asset.valuation, asset.currency || 'LKR', { showCode: true })}
                         </td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(asset.verificationStatus)}`}>
-                            {asset.verificationStatus.replace('_', ' ')}
+                            Documents: {asset.verificationStatus.replace('_', ' ')}
                           </span>
+                          <p className="text-xs text-zinc-500 mt-2">Registry approval is confirmed separately when you save approval.</p>
                         </td>
                         <td className="py-3 px-4 text-sm text-zinc-600 dark:text-zinc-400">
                           {asset.riskScore !== undefined ? `${asset.riskScore}/100` : 'N/A'}
@@ -625,7 +625,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-zinc-600 dark:text-zinc-400">Valuation:</span>
-                        <span className="text-zinc-900 dark:text-zinc-100">{selectedAsset.currency} {Number(selectedAsset.valuation).toLocaleString()}</span>
+                        <span className="text-zinc-900 dark:text-zinc-100">{format(selectedAsset.valuationLKR ?? selectedAsset.valuation, selectedAsset.currency || 'LKR', { showCode: true })}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-zinc-600 dark:text-zinc-400">Verification Status:</span>

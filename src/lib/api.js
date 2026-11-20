@@ -1,6 +1,7 @@
 import axios from 'axios';
+import { API_BASE_URL } from './config';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const API_URL = API_BASE_URL;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -33,6 +34,14 @@ export const authAPI = {
       },
     });
   },
+
+  updateWallet: (walletAddress) =>
+    api.put('/auth/wallet', { walletAddress }),
+  checkWallet: (walletAddress) =>
+    api.get(`/auth/wallet/check/${walletAddress}`),
+
+  getMe: () =>
+    api.get('/auth/me'),
 };
 
 export const kycAPI = {
@@ -149,6 +158,15 @@ export const kycAPI = {
     });
   },
 
+  tokenizeAsset: (assetId, data = {}) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return axios.post(`${API_URL}/assets/${assetId}/tokenize`, data, {
+      headers: {
+        Authorization: `Bearer ${user.token}`,
+      },
+    });
+  },
+
   reuploadAssetDocuments: (assetId, formData) => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     return axios.post(`${API_URL}/assets/${assetId}/reupload`, formData, {
@@ -212,6 +230,36 @@ export const kycAPI = {
       },
     });
   },
+};
+
+// Off-chain signed sell orders and full-property sales (the token is attached by the interceptor above).
+export const ordersAPI = {
+  list: (assetId) => api.get("/orders", { params: assetId != null ? { assetId } : {} }),
+  create: (order, signature) => api.post("/orders", { order, signature }),
+  cancel: (orderHash) => api.post(`/orders/${orderHash}/cancel`),
+  stale: () => api.get("/orders/stale"),
+};
+
+export const salesAPI = {
+  list: () => api.get("/sales"),
+  get: (offerId, address) => api.get(`/sales/${offerId}`, { params: address ? { address } : {} }),
+  vote: (offerId, support, signature) => api.post(`/sales/${offerId}/votes`, { support, signature }),
+  payout: (offerId, address) => api.get(`/sales/${offerId}/payout/${address}`),
+  open: (offerId) => api.post(`/sales/${offerId}/open`),
+  relayVotes: (offerId) => api.post(`/sales/${offerId}/relay-votes`),
+  finalize: (offerId) => api.post(`/sales/${offerId}/finalize`),
+  confirm: (offerId) => api.post(`/sales/${offerId}/confirm`),
+  cancel: (offerId) => api.post(`/sales/${offerId}/cancel`),
+};
+
+// Admin-only gas analytics (the token is attached by the interceptor above).
+export const gasAPI = {
+  getSummary: () => api.get('/gas/summary'),
+  getBenchmark: () => api.get('/gas/benchmark'),
+  getOptimizations: () => api.get('/gas/optimizations'),
+  getScenario: () => api.get('/gas/scenario'),
+  getTransactions: (params) => api.get('/gas/transactions', { params }),
+  sync: () => api.post('/gas/sync'),
 };
 
 export default api;

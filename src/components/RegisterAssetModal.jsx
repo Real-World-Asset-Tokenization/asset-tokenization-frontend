@@ -83,7 +83,7 @@ export default function RegisterAssetModal({
         <div className="flex items-center justify-between p-6 border-b border-[#94A3BB]/15">
           <div>
             <h2 className="text-xl font-bold text-[#FFFFFF] flex items-center gap-2">
-              <Building className="w-5 h-5 text-[#00E5FF]" />
+              <Building className="w-5 h-5 text-[#22e07a]" />
               Register Real-World Property for Tokenization
             </h2>
             <p className="text-xs text-[#94A3BB] mt-0.5">
@@ -124,7 +124,7 @@ export default function RegisterAssetModal({
                 placeholder="e.g. Colombo Oceanfront Penthouse"
                 value={formData.name}
                 onChange={handleChange}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#00E5FF]"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#22e07a]"
               />
             </div>
 
@@ -137,7 +137,7 @@ export default function RegisterAssetModal({
                 placeholder="e.g. COP-01"
                 value={formData.symbol}
                 onChange={handleChange}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#00E5FF]"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#22e07a]"
               />
             </div>
           </div>
@@ -149,7 +149,7 @@ export default function RegisterAssetModal({
                 name="propertyType"
                 value={formData.propertyType}
                 onChange={handleChange}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#00E5FF]"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#22e07a]"
               >
                 <option value="Residential Real Estate">Residential Real Estate</option>
                 <option value="Commercial Business Complex">Commercial Business Complex</option>
@@ -167,7 +167,7 @@ export default function RegisterAssetModal({
                 placeholder="e.g. Marine Drive, Colombo 03, Sri Lanka"
                 value={formData.location}
                 onChange={handleChange}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#00E5FF]"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#22e07a]"
               />
             </div>
           </div>
@@ -184,7 +184,7 @@ export default function RegisterAssetModal({
                 min="100000"
                 value={formData.valuationLKR}
                 onChange={handleChange}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#00E5FF]"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#22e07a]"
               />
             </div>
 
@@ -199,7 +199,7 @@ export default function RegisterAssetModal({
                 min="10"
                 value={formData.totalShares}
                 onChange={handleChange}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#00E5FF]"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#22e07a]"
               />
             </div>
           </div>
@@ -215,7 +215,7 @@ export default function RegisterAssetModal({
               placeholder="e.g. DEED-LK-WP-2026-9812A"
               value={formData.deedIdentifier}
               onChange={handleChange}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#00E5FF]"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#22e07a]"
             />
             <p className="text-[11px] text-[#94A3BB]/70 mt-1">
               A SHA-256 cryptographic proof will be minted on-chain to bind the digital token to this deed.
@@ -230,7 +230,7 @@ export default function RegisterAssetModal({
               placeholder="Provide key architectural, rental yield, and legal title highlights..."
               value={formData.description}
               onChange={handleChange}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#00E5FF]"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#22e07a]"
             />
           </div>
 
@@ -241,14 +241,14 @@ export default function RegisterAssetModal({
               name="imageUrl"
               value={formData.imageUrl}
               onChange={handleChange}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#00E5FF]"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D22] border border-[#94A3BB]/20 text-[#FFFFFF] text-xs focus:outline-none focus:border-[#22e07a]"
             />
           </div>
 
           {/* Economics Summary */}
-          <div className="p-3.5 rounded-xl bg-[#4F46E5]/10 border border-[#4F46E5]/30 text-xs text-[#94A3BB] flex items-center justify-between">
+          <div className="p-3.5 rounded-xl bg-[#16a34a]/10 border border-[#16a34a]/30 text-xs text-[#94A3BB] flex items-center justify-between">
             <span>Calculated Fraction Unit Price:</span>
-            <span className="font-bold text-[#00E5FF] text-sm">
+            <span className="font-bold text-[#22e07a] text-sm">
               LKR {Math.round(Number(formData.valuationLKR) / Number(formData.totalShares || 1)).toLocaleString()} / share
             </span>
           </div>
@@ -258,7 +258,7 @@ export default function RegisterAssetModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-[#FFFFFF] font-semibold text-sm shadow-lg shadow-[#4F46E5]/25 hover:shadow-[#00E5FF]/20 border border-[#4F46E5] transition-all cursor-pointer disabled:opacity-50"
+              className="w-full py-3 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-[#FFFFFF] font-semibold text-sm shadow-lg shadow-[#16a34a]/25 hover:shadow-[#22e07a]/20 border border-[#16a34a] transition-all cursor-pointer disabled:opacity-50"
             >
               {isSubmitting ? "Processing Blockchain Registration..." : "Submit Property & Register on Blockchain"}
             </button>

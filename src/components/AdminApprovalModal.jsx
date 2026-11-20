@@ -72,7 +72,7 @@ export default function AdminApprovalModal({
         <div className="flex items-center justify-between p-6 border-b border-[#94A3BB]/15">
           <div>
             <h2 className="text-xl font-bold text-[#FFFFFF] flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-[#00E5FF]" />
+              <ShieldCheck className="w-5 h-5 text-[#22e07a]" />
               Admin Verification & Tokenization Console
             </h2>
             <p className="text-xs text-[#94A3BB] mt-0.5">
@@ -97,8 +97,8 @@ export default function AdminApprovalModal({
           )}
 
           {actionMessage && (
-            <div className="p-3.5 rounded-xl bg-[#4F46E5]/15 border border-[#4F46E5]/30 text-[#00E5FF] text-xs flex items-center gap-2 mb-3">
-              <RefreshCw className="w-4 h-4 text-[#00E5FF] animate-spin shrink-0" />
+            <div className="p-3.5 rounded-xl bg-[#16a34a]/15 border border-[#16a34a]/30 text-[#22e07a] text-xs flex items-center gap-2 mb-3">
+              <RefreshCw className="w-4 h-4 text-[#22e07a] animate-spin shrink-0" />
               <span>{actionMessage}</span>
             </div>
           )}
@@ -108,7 +108,7 @@ export default function AdminApprovalModal({
         <div className="p-6 overflow-y-auto space-y-4">
           {pendingAssets.length === 0 ? (
             <div className="text-center py-12 text-[#94A3BB] text-sm">
-              <CheckCircle2 className="w-10 h-10 text-[#00E5FF] mx-auto mb-2 opacity-80" />
+              <CheckCircle2 className="w-10 h-10 text-[#22e07a] mx-auto mb-2 opacity-80" />
               All submitted properties have been verified and tokenized.
             </div>
           ) : (
@@ -126,7 +126,7 @@ export default function AdminApprovalModal({
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                         asset.status === "Approved"
-                          ? "bg-[#4F46E5]/20 text-[#00E5FF] border border-[#4F46E5]/30"
+                          ? "bg-[#16a34a]/20 text-[#22e07a] border border-[#16a34a]/30"
                           : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
                       }`}
                     >
@@ -134,9 +134,9 @@ export default function AdminApprovalModal({
                     </span>
                   </div>
                   <p className="text-xs text-[#94A3BB]">
-                    Valuation: <strong className="text-[#FFFFFF]">LKR {asset.valuationLKR.toLocaleString()}</strong> • Fractional Shares: <strong className="text-[#00E5FF]">{asset.totalShares.toLocaleString()} Units</strong>
+                    Valuation: <strong className="text-[#FFFFFF]">LKR {asset.valuationLKR.toLocaleString()}</strong> • Fractional Shares: <strong className="text-[#22e07a]">{asset.totalShares.toLocaleString()} Units</strong>
                   </p>
-                  <p className="text-[11px] font-mono text-[#00E5FF] truncate max-w-md">
+                  <p className="text-[11px] font-mono text-[#22e07a] truncate max-w-md">
                     Deed Hash: {asset.documentHash}
                   </p>
                 </div>
@@ -146,7 +146,7 @@ export default function AdminApprovalModal({
                     <button
                       onClick={() => handleApprove(asset)}
                       disabled={loadingId === asset.assetId}
-                      className="flex-1 md:flex-initial flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-xl bg-[#4F46E5] hover:bg-[#4338CA] text-[#FFFFFF] text-xs font-semibold shadow-md shadow-[#4F46E5]/20 transition-all cursor-pointer disabled:opacity-50"
+                      className="flex-1 md:flex-initial flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-[#FFFFFF] text-xs font-semibold shadow-md shadow-[#16a34a]/20 transition-all cursor-pointer disabled:opacity-50"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>Approve Deed On-Chain</span>
@@ -157,7 +157,7 @@ export default function AdminApprovalModal({
                     <button
                       onClick={() => handleTokenize(asset)}
                       disabled={loadingId === asset.assetId}
-                      className="flex-1 md:flex-initial flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-xl bg-[#00E5FF] hover:bg-[#00cbe2] text-[#050816] text-xs font-bold shadow-md shadow-[#00E5FF]/20 transition-all cursor-pointer disabled:opacity-50"
+                      className="flex-1 md:flex-initial flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-xl bg-[#22e07a] hover:bg-[#1fcf6c] text-[#050816] text-xs font-bold shadow-md shadow-[#22e07a]/20 transition-all cursor-pointer disabled:opacity-50"
                     >
                       <Coins className="w-3.5 h-3.5" />
                       <span>Mint & Tokenize</span>

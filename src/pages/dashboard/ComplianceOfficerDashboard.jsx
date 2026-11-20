@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { authAPI, kycAPI } from '../../lib/api';
+import Navbar from '../../components/Navbar';
+import { ShieldCheck } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
 /*  Presentational icon components (decoration only – no logic)        */
@@ -309,48 +311,33 @@ export default function ComplianceOfficerDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-50 via-white to-blue-50/60 dark:from-black dark:via-zinc-950 dark:to-zinc-900">
-      {/* ---------------------------------------------------------------- */}
-      {/* Navbar                                                            */}
-      {/* ---------------------------------------------------------------- */}
-      <nav className="sticky top-0 z-40 border-b border-zinc-200/70 bg-white/80 backdrop-blur-xl dark:border-zinc-800/70 dark:bg-zinc-900/80">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25">
-              <ShieldCheckIcon className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold leading-tight tracking-tight text-zinc-900 dark:text-zinc-50">
-                Compliance Officer Dashboard
-              </h1>
-              <p className="hidden text-xs text-zinc-500 dark:text-zinc-400 sm:block">
-                Review users &amp; verify asset submissions
-              </p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+      <Navbar />
 
-          <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-3 rounded-full border border-zinc-200 bg-white/70 py-1.5 pl-1.5 pr-4 dark:border-zinc-700 dark:bg-zinc-800/60 sm:flex">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white shadow-sm">
-                {user?.name?.charAt(0)?.toUpperCase() || <UserIcon className="h-4 w-4" />}
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
+        {/* Compliance Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                <ShieldCheck className="w-5 h-5 text-white" />
               </div>
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                Welcome, {user?.name}
-              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-3xl font-black tracking-tight text-white">
+                    Compliance Officer Review Desk
+                  </h1>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                    Admin View
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Logged in as <strong className="text-zinc-200">{user?.name || "Compliance Officer"}</strong> ({user?.email})
+                </p>
+              </div>
             </div>
-            <button
-              onClick={handleLogout}
-              className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-red-500/20 transition-all hover:shadow-lg hover:shadow-red-500/30 hover:brightness-110 active:scale-[0.98]"
-            >
-              <LogoutIcon className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
           </div>
         </div>
-      </nav>
-
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        {/* Error banner */}
         {error && (
           <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3.5 text-sm text-red-700 shadow-sm backdrop-blur dark:border-red-800/60 dark:bg-red-900/20 dark:text-red-300">
             <AlertIcon className="mt-0.5 h-5 w-5 flex-shrink-0" />
