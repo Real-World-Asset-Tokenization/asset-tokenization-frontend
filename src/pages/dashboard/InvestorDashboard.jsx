@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { kycAPI } from '../../lib/api';
+import LivenessDetection from '../../components/LivenessDetection';
 
 export default function InvestorDashboard() {
   const navigate = useNavigate();
@@ -12,6 +13,7 @@ export default function InvestorDashboard() {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
   const [idNumber, setIdNumber] = useState('');
+  const [showLivenessModal, setShowLivenessModal] = useState(false);
 
   useEffect(() => {
     fetchKYCStatus();
@@ -87,6 +89,27 @@ export default function InvestorDashboard() {
       const response = await kycAPI.uploadSelfie(formData);
       console.log('Selfie upload response:', response.data);
       await fetchKYCStatus();
+    } catch (err) {
+      console.error('Selfie upload error:', err);
+      setError(err.response?.data?.message || 'Selfie upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleLivenessCapture = async (file, livenessData) => {
+    setUploading(true);
+    setError('');
+
+    const formData = new FormData();
+    formData.append('selfie', file);
+    formData.append('livenessData', JSON.stringify(livenessData));
+
+    try {
+      const response = await kycAPI.uploadSelfie(formData);
+      console.log('Selfie upload response:', response.data);
+      await fetchKYCStatus();
+      setShowLivenessModal(false);
     } catch (err) {
       console.error('Selfie upload error:', err);
       setError(err.response?.data?.message || 'Selfie upload failed');
@@ -228,14 +251,15 @@ export default function InvestorDashboard() {
                 <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
                   Selfie
                 </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleSelfieUpload}
-                  disabled={uploading || kycStatus?.selfie}
-                  className="w-full text-sm text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
-                />
-                {kycStatus?.selfie && (
+                {!kycStatus?.selfie ? (
+                  <button
+                    onClick={() => setShowLivenessModal(true)}
+                    disabled={uploading}
+                    className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {uploading ? 'Processing...' : 'Capture Live Selfie'}
+                  </button>
+                ) : (
                   <p className="text-sm text-green-600 mt-1">Selfie uploaded ✓</p>
                 )}
               </div>
@@ -279,6 +303,16 @@ export default function InvestorDashboard() {
           </div>
         </div>
       </main>
+
+      {/* Liveness Detection Modal */}
+      {showLivenessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <LivenessDetection
+            onCapture={handleLivenessCapture}
+            onCancel={() => setShowLivenessModal(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
