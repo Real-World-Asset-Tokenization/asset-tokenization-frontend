@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { kycAPI } from '../../lib/api';
+import LivenessDetection from '../../components/LivenessDetection';
 
 /* ------------------------------------------------------------------ */
 /*  Presentational icon components (decoration only – no logic)        */
@@ -144,6 +145,7 @@ export default function AssetOwnerDashboard() {
     selfie: null,
   });
   const [kycReuploadIdNumber, setKycReuploadIdNumber] = useState('');
+  const [showLivenessModal, setShowLivenessModal] = useState(false);
 
   useEffect(() => {
     fetchKYCStatus();
@@ -236,6 +238,27 @@ export default function AssetOwnerDashboard() {
       const response = await kycAPI.uploadSelfie(formData);
       console.log('Selfie upload response:', response.data);
       await fetchKYCStatus();
+    } catch (err) {
+      console.error('Selfie upload error:', err);
+      setError(err.response?.data?.message || 'Selfie upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleLivenessCapture = async (file, livenessData) => {
+    setUploading(true);
+    setError('');
+
+    const formData = new FormData();
+    formData.append('selfie', file);
+    formData.append('livenessData', JSON.stringify(livenessData));
+
+    try {
+      const response = await kycAPI.uploadSelfie(formData);
+      console.log('Selfie upload response:', response.data);
+      await fetchKYCStatus();
+      setShowLivenessModal(false);
     } catch (err) {
       console.error('Selfie upload error:', err);
       setError(err.response?.data?.message || 'Selfie upload failed');
@@ -835,14 +858,15 @@ export default function AssetOwnerDashboard() {
                     <PhotoIcon className="h-4 w-4 text-blue-500" />
                     Selfie
                   </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleSelfieUpload}
-                    disabled={uploading || kycStatus?.selfie}
-                    className={fileClass}
-                  />
-                  {kycStatus?.selfie && (
+                  {!kycStatus?.selfie ? (
+                    <button
+                      onClick={() => setShowLivenessModal(true)}
+                      disabled={uploading}
+                      className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {uploading ? 'Processing...' : 'Capture Live Selfie'}
+                    </button>
+                  ) : (
                     <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-green-600 dark:text-green-400">
                       <CheckIcon className="h-4 w-4" /> Selfie uploaded
                     </p>
@@ -1695,6 +1719,18 @@ export default function AssetOwnerDashboard() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Liveness Detection Modal                                             */}
+      {/* ------------------------------------------------------------------ */}
+      {showLivenessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <LivenessDetection
+            onCapture={handleLivenessCapture}
+            onCancel={() => setShowLivenessModal(false)}
+          />
         </div>
       )}
     </div>
